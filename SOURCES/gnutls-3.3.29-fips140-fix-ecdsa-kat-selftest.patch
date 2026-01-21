@@ -1,0 +1,70 @@
+--- a/lib/crypto-selftests-pk.c	2019-02-06 14:49:44.807422315 +0100
++++ b/lib/crypto-selftests-pk.c	2019-02-06 14:56:40.311049707 +0100
+@@ -731,30 +731,9 @@
+ 			goto cleanup;
+ 		}
+ 
+-		if (all == 0)
+-			return 0;
+ #endif
+ 
+ 		/* Test ECDSA */
+-#ifdef ENABLE_NON_SUITEB_CURVES
+-		PK_KNOWN_TEST(GNUTLS_PK_EC, 0,
+-			      GNUTLS_CURVE_TO_BITS
+-			      (GNUTLS_ECC_CURVE_SECP192R1),
+-			      GNUTLS_DIG_SHA256, ecdsa_secp192r1_privkey,
+-			      ecdsa_secp192r1_sig);
+-		PK_TEST(GNUTLS_PK_EC, test_sig,
+-			GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP192R1),
+-			GNUTLS_DIG_SHA256);
+-
+-		PK_KNOWN_TEST(GNUTLS_PK_EC, 0,
+-			      GNUTLS_CURVE_TO_BITS
+-			      (GNUTLS_ECC_CURVE_SECP224R1),
+-			      GNUTLS_DIG_SHA256, ecdsa_secp224r1_privkey,
+-			      ecdsa_secp224r1_sig);
+-		PK_TEST(GNUTLS_PK_EC, test_sig,
+-			GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP224R1),
+-			GNUTLS_DIG_SHA256);
+-#endif
+ 		PK_KNOWN_TEST(GNUTLS_PK_EC, 0,
+ 			      GNUTLS_CURVE_TO_BITS
+ 			      (GNUTLS_ECC_CURVE_SECP256R1),
+@@ -764,6 +743,9 @@
+ 			GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP256R1),
+ 			GNUTLS_DIG_SHA256);
+ 
++		if (all == 0)
++			return 0;
++
+ 		PK_KNOWN_TEST(GNUTLS_PK_EC, 0,
+ 			      GNUTLS_CURVE_TO_BITS
+ 			      (GNUTLS_ECC_CURVE_SECP384R1),
+@@ -782,6 +764,26 @@
+ 			GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP521R1),
+ 			GNUTLS_DIG_SHA512);
+ 
++#ifdef ENABLE_NON_SUITEB_CURVES
++		PK_KNOWN_TEST(GNUTLS_PK_EC, 0,
++			      GNUTLS_CURVE_TO_BITS
++			      (GNUTLS_ECC_CURVE_SECP192R1),
++			      GNUTLS_DIG_SHA256, ecdsa_secp192r1_privkey,
++			      ecdsa_secp192r1_sig);
++		PK_TEST(GNUTLS_PK_EC, test_sig,
++			GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP192R1),
++			GNUTLS_DIG_SHA256);
++
++		PK_KNOWN_TEST(GNUTLS_PK_EC, 0,
++			      GNUTLS_CURVE_TO_BITS
++			      (GNUTLS_ECC_CURVE_SECP224R1),
++			      GNUTLS_DIG_SHA256, ecdsa_secp224r1_privkey,
++			      ecdsa_secp224r1_sig);
++		PK_TEST(GNUTLS_PK_EC, test_sig,
++			GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP224R1),
++			GNUTLS_DIG_SHA256);
++#endif
++
+ 		break;
+ 
+ 	default:
