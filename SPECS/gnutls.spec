@@ -3,12 +3,13 @@
 %global xsver 10
 %global xsrel %{xsver}%{?xscount}%{?xshash}
 
+%bcond_with cxx
 %bcond_with dane
 %bcond_with guile
 Summary: A TLS protocol implementation
 Name: gnutls
 Version: 3.3.29
-Release: %{?xsrel}%{?dist}
+Release: %{?xsrel}.0%{?dist}
 # The libraries are LGPLv2.1+, utilities are GPLv3+
 License: GPLv3+ and LGPLv2+
 Group: System Environment/Libraries
@@ -27,6 +28,9 @@ Requires: p11-kit-trust
 Requires: libtasn1 >= 3.9
 Requires: p11-kit >= 0.23.1
 Requires: trousers >= 0.3.11.2
+%if %{with cxx}
+BuildRequires: gcc-c++
+%endif
 %if %{with dane}
 BuildRequires: unbound-devel unbound-libs
 %endif
@@ -67,15 +71,19 @@ Patch25: 0001-CP-50333-Skip-certficate-chain-export-test.patch
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
 Provides: bundled(gnulib) = 20130424
 
+%if %{with cxx}
 %package c++
 Summary: The C++ interface to GnuTLS
 Requires: %{name}%{?_isa} = %{version}-%{release}
+%endif
 
 %package devel
 Summary: Development files for the %{name} package
 Group: Development/Libraries
 Requires: %{name}%{?_isa} = %{version}-%{release}
+%if %{with cxx}
 Requires: %{name}-c++%{?_isa} = %{version}-%{release}
+%endif
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
 %endif
@@ -113,6 +121,7 @@ application programming interface (API) to access the secure communications
 protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and
 other required structures.
 
+%if %{with cxx}
 %description c++
 GnuTLS is a secure communications library implementing the SSL, TLS and DTLS
 protocols and technologies around them. It provides a simple C language
@@ -120,6 +129,7 @@ application programming interface (API) to access the secure communications
 protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and
 other required structures.
 This package contains the C++ interface for the GnuTLS library.
+%endif
 
 %description devel
 GnuTLS is a secure communications library implementing the SSL, TLS and DTLS
@@ -246,9 +256,10 @@ make check %{?_smp_mflags}
 
 %postun -p /sbin/ldconfig
 
+%if %{with cxx}
 %post c++ -p /sbin/ldconfig
-
 %postun c++ -p /sbin/ldconfig
+%endif
 
 %post devel
 if [ -f %{_infodir}/gnutls.info.gz ]; then
@@ -278,8 +289,10 @@ fi
 %{_libdir}/.libgnutls.so.28*.hmac
 %doc COPYING COPYING.LESSER README AUTHORS NEWS THANKS
 
+%if %{with cxx}
 %files c++
 %{_libdir}/libgnutlsxx.so.*
+%endif
 
 %files devel
 %defattr(-,root,root,-)
@@ -322,6 +335,9 @@ fi
 %endif
 
 %changelog
+* Fri Jan 23 2026 Philippe Coval <philippe.coval@vates.tech> - 3.3.29-10.0
+- Make c++ lib optional (disabled by default)
+
 * Mon Oct 21 2024 Deli Zhang <deli.zhang@citrix.com> - 3.3.29-10
 - First imported release
 
