@@ -1,86 +1,154 @@
+## START: Set by rpmautospec
+## (rpmautospec version 0.7.3)
+## RPMAUTOSPEC: autorelease, autochangelog
+%define autorelease(e:s:pb:n) %{?-p:0.}%{lua:
+    release_number = 4;
+    base_release_number = tonumber(rpm.expand("%{?-b*}%{!?-b:1}"));
+    print(release_number + base_release_number - 1);
+}%{?-e:.%{-e*}}%{?-s:.%{-s*}}%{!?-n:%{?dist}}
+## END: Set by rpmautospec
+
+%define srpmhash() %{lua:
+local files = rpm.expand("%_specdir/gnutls.spec")
+for i, p in ipairs(patches) do
+   files = files.." "..p
+end
+for i, p in ipairs(sources) do
+   files = files.." "..p
+end
+local sha256sum = assert(io.popen("cat "..files.."| sha256sum"))
+local hash = sha256sum:read("*a")
+sha256sum:close()
+print(string.sub(hash, 0, 16))
+}
+
+Version: 3.8.8
+Release: %{?autorelease}%{!?autorelease:1%{?dist}}
+Patch: gnutls-3.2.7-rpath.patch
+
+# follow https://gitlab.com/gnutls/gnutls/-/issues/1443
+Patch: gnutls-3.8.8-tests-ktls-skip-tls12-chachapoly.patch
+
+%bcond_without bootstrap
 %bcond_without dane
-%bcond_with guile
+%bcond_without fips
+%bcond_with tpm12
+%bcond_without tpm2
+%if 0%{?rhel} >= 9
+%bcond_with gost
+%else
+%bcond_without gost
+%endif
+%bcond_without certificate_compression
+%bcond_without liboqs
+%bcond_without tests
+
+%if 0%{?fedora} && 0%{?fedora} < 38
+%bcond_without srp
+%else
+%bcond_with srp
+%endif
+
+%if 0%{?fedora}
+%bcond_without mingw
+%else
+%bcond_with mingw
+%endif
+
+%if 0%{?rhel} >= 9 && %{with fips}
+%bcond_without bundled_gmp
+%else
+%bcond_with bundled_gmp
+%endif
+
+
+%define fips_requires() %{lua:
+local f = assert(io.popen("rpm -q --queryformat '%{EVR}' --whatprovides "..rpm.expand("'%1%{?_isa}'")))
+local v = f:read("*all")
+f:close()
+print("Requires: "..rpm.expand("%1%{?_isa}").." = "..v.."\\n")
+}
+
 Summary: A TLS protocol implementation
 Name: gnutls
-Version: 3.3.29
-Release: 9%{?dist}
 # The libraries are LGPLv2.1+, utilities are GPLv3+
-License: GPLv3+ and LGPLv2+
-Group: System Environment/Libraries
-BuildRequires: p11-kit-devel >= 0.23.1, gettext
-BuildRequires: zlib-devel, readline-devel, libtasn1-devel >= 3.8
-BuildRequires: libtool, automake, autoconf, texinfo
-BuildRequires: autogen-libopts-devel >= 5.18 autogen gettext-devel
-BuildRequires: nettle-devel >= 2.7.1
+License: GPL-3.0-or-later AND LGPL-2.1-or-later
+BuildRequires: p11-kit-devel >= 0.21.3, gettext-devel
+BuildRequires: readline-devel, libtasn1-devel >= 4.3
+%if %{with certificate_compression}
+BuildRequires: zlib-devel, brotli-devel, libzstd-devel
+%endif
+%if %{with liboqs}
+BuildRequires: liboqs-devel
+%endif
+%if %{with bootstrap}
+BuildRequires: automake, autoconf, gperf, libtool, texinfo
+%endif
+BuildRequires: nettle-devel >= 3.10
+%if %{with tpm12}
 BuildRequires: trousers-devel >= 0.3.11.2
-BuildRequires: libidn-devel
-BuildRequires: gperf
-BuildRequires: fipscheck
-BuildRequires: softhsm, net-tools
+%endif
+%if %{with tpm2}
+BuildRequires: tpm2-tss-devel >= 3.0.3
+%endif
+BuildRequires: libidn2-devel
+BuildRequires: libunistring-devel
+BuildRequires: net-tools, softhsm, gcc, gcc-c++
+BuildRequires: gnupg2
+BuildRequires: git-core
+
+# for a sanity check on cert loading
+BuildRequires: p11-kit-trust, ca-certificates
+Requires: crypto-policies
 Requires: p11-kit-trust
-# The automatic dependency on libtasn1 and p11-kit is insufficient,
-Requires: libtasn1 >= 3.9
-Requires: p11-kit >= 0.23.1
-Requires: trousers >= 0.3.11.2
+Requires: libtasn1 >= 4.3
+# always bump when a nettle release is packaged
+Requires: nettle >= 3.10
+%if %{with tpm12}
+Recommends: trousers >= 0.3.11.2
+%endif
+
 %if %{with dane}
 BuildRequires: unbound-devel unbound-libs
 %endif
-%if %{with guile}
-BuildRequires: guile-devel
+BuildRequires: make gtk-doc
+
+%if %{with mingw}
+BuildRequires:  mingw32-cpp
+BuildRequires:  mingw32-filesystem >= 95
+BuildRequires:  mingw32-gcc
+BuildRequires:  mingw32-gcc-c++
+BuildRequires:  mingw32-libtasn1 >= 4.3
+BuildRequires:  mingw32-readline
+BuildRequires:  mingw32-zlib
+BuildRequires:  mingw32-nettle >= 3.6
+BuildRequires:  mingw64-cpp
+BuildRequires:  mingw64-filesystem >= 95
+BuildRequires:  mingw64-gcc
+BuildRequires:  mingw64-gcc-c++
+BuildRequires:  mingw64-libtasn1 >= 4.3
+BuildRequires:  mingw64-readline
+BuildRequires:  mingw64-zlib
+BuildRequires:  mingw64-nettle >= 3.6
 %endif
+
 URL: http://www.gnutls.org/
-#Source0: ftp://ftp.gnutls.org/gcrypt/gnutls/%{name}-%{version}.tar.xz
-#Source1: ftp://ftp.gnutls.org/gcrypt/gnutls/%{name}-%{version}.tar.xz.sig
-# XXX patent tainted code removed.
-Source0: %{name}-%{version}-hobbled.tar.xz
-Source1: libgnutls-config
-Source2: hobble-gnutls
-Patch1: gnutls-3.2.7-rpath.patch
-Patch2: gnutls-3.1.11-nosrp.patch
-Patch4: gnutls-3.3.8-fips-key.patch
-Patch5: gnutls-3.3.8-padlock-disable.patch
-# In 3.3.8 we were shipping an early backport of a fix in GNUTLS_E_APPLICATION_DATA
-# behavior, which was using 3.4.0 semantics. We continue shipping to support
-# any applications depending on that.
-Patch6: gnutls-3.3.22-eapp-data.patch
-Patch7: gnutls-3.3.26-dh-params-1024.patch
-# Backport serv --sni-hostname option support (rhbz#1444792)
-Patch8: gnutls-3.3.29-serv-sni-hostname.patch
-Patch9: gnutls-3.3.29-serv-unrec-name.patch
-Patch10: gnutls-3.3.29-cli-sni-hostname.patch
-Patch11: gnutls-3.3.29-tests-sni-hostname.patch
-# Do not try to retrieve PIN from URI more than once
-Patch12: gnutls-3.3.29-pkcs11-retrieve-pin-from-uri-once.patch
-# Backport of fixes to address CVE-2018-10844 CVE-2018-10845 CVE-2018-10846
-# (rhbz#1589708 rhbz#1589707 rhbz1589704)
-Patch13: gnutls-3.3.29-dummy-wait-account-len-field.patch
-Patch14: gnutls-3.3.29-dummy-wait-hash-same-amount-of-blocks.patch
-Patch15: gnutls-3.3.29-cbc-mac-verify-ssl3-min-pad.patch
-Patch16: gnutls-3.3.29-remove-hmac-sha384-sha256-from-default.patch
-# Adjustment on tests
-Patch17: gnutls-3.3.29-do-not-run-sni-hostname-windows.patch
-# Backport testpkcs11 test. This test checks rhbz#1375307
-Patch18: gnutls-3.3.29-testpkcs11.patch
-# Disable failing PKCS#11 tests brought from master branch. The reasons are:
-# - ECC key generation without login is not supported
-# - Certificates are marked as private objects
-# - "--load-pubkey" option is not supported
-# - "--test-sign" option is not supported
-# - Certificates do not inherit its ID from the private key
-Patch19: gnutls-3.3.29-disable-failing-tests.patch
-# Do not mark certificates as private objects and re-enable test for this
-Patch20: gnutls-3.3.29-do-not-mark-object-as-private.patch
-Patch21: gnutls-3.3.29-re-enable-check-cert-write.patch
-# Increase the length of the RSA keys generated in testpkcs11 to 2048 bits.
-# This allows the test to run in FIPS mode
-Patch22: gnutls-3.3.29-tests-pkcs11-increase-RSA-gen-size.patch
-# Enlarge buffer size to support resumption with large keys (rhbz#1542461)
-Patch23: gnutls-3.3.29-serv-large-key-resumption.patch
-# HMAC-SHA-256 cipher suites brought back downstream for compatibility
-# The priority was set below AEAD
-Patch24: gnutls-3.3.29-bring-back-hmac-sha256.patch
-# Run KAT startup test for ECDSA (using secp256r1 curve) (rhbz#1673919)
-Patch25: gnutls-3.3.29-fips140-fix-ecdsa-kat-selftest.patch
+%define short_version %(echo %{version} | grep -m1 -o "[0-9]*\.[0-9]*" | head -1)
+Source0: https://www.gnupg.org/ftp/gcrypt/gnutls/v%{short_version}/%{name}-%{version}.tar.xz
+Source1: https://www.gnupg.org/ftp/gcrypt/gnutls/v%{short_version}/%{name}-%{version}.tar.xz.sig
+Source2: https://gnutls.org/gnutls-release-keyring.gpg
+
+%if %{with bundled_gmp}
+Source100:	gmp-6.2.1.tar.xz
+# Taken from the main gmp package
+Source101:	gmp-6.2.1-intel-cet.patch
+Source102:	gmp-6.2.1-c23.patch
+%endif
+
+%if 0%{?rhel} >= 10
+Source201:	gnutls-3.8.8-tests-rsa-default.patch
+%endif
+
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
 Provides: bundled(gnulib) = 20130424
 
@@ -90,20 +158,16 @@ Requires: %{name}%{?_isa} = %{version}-%{release}
 
 %package devel
 Summary: Development files for the %{name} package
-Group: Development/Libraries
 Requires: %{name}%{?_isa} = %{version}-%{release}
 Requires: %{name}-c++%{?_isa} = %{version}-%{release}
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
 %endif
 Requires: pkgconfig
-Requires(post): /sbin/install-info
-Requires(preun): /sbin/install-info
 
 %package utils
-License: GPLv3+
+License: GPL-3.0-or-later
 Summary: Command line tools for TLS protocol
-Group: Applications/System
 Requires: %{name}%{?_isa} = %{version}-%{release}
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
@@ -115,12 +179,14 @@ Summary: A DANE protocol implementation for GnuTLS
 Requires: %{name}%{?_isa} = %{version}-%{release}
 %endif
 
-%if %{with guile}
-%package guile
-Summary: Guile bindings for the GNUTLS library
-Group: Development/Libraries
+%if %{with fips}
+%package fips
+Summary: Virtual package to install packages required to use %{name} under FIPS mode
 Requires: %{name}%{?_isa} = %{version}-%{release}
-Requires: guile
+%{fips_requires nettle}
+%if !%{with bundled_gmp}
+%{fips_requires gmp}
+%endif
 %endif
 
 %description
@@ -136,7 +202,6 @@ protocols and technologies around them. It provides a simple C language
 application programming interface (API) to access the secure communications 
 protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and 
 other required structures. 
-This package contains the C++ interface for the GnuTLS library.
 
 %description devel
 GnuTLS is a secure communications library implementing the SSL, TLS and DTLS 
@@ -167,179 +232,289 @@ This package contains library that implements the DANE protocol for verifying
 TLS certificates through DNSSEC.
 %endif
 
-%if %{with guile}
-%description guile
+%if %{with fips}
+%description fips
 GnuTLS is a secure communications library implementing the SSL, TLS and DTLS 
 protocols and technologies around them. It provides a simple C language 
 application programming interface (API) to access the secure communications 
 protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and 
-other required structures. 
-This package contains Guile bindings for the library.
+other required structures.
+This package does not contain any file, but installs required packages
+to use GnuTLS under FIPS mode.
+%endif
+
+%if %{with mingw}
+%package -n mingw32-%{name}
+Summary:        MinGW GnuTLS TLS/SSL encryption library
+Requires:       pkgconfig
+Requires:       mingw32-libtasn1 >= 4.3
+BuildArch:      noarch
+
+%description -n mingw32-gnutls
+GnuTLS TLS/SSL encryption library.  This library is cross-compiled
+for MinGW.
+
+%package -n mingw64-%{name}
+Summary:        MinGW GnuTLS TLS/SSL encryption library
+Requires:       pkgconfig
+Requires:       mingw64-libtasn1 >= 4.3
+BuildArch:      noarch
+
+%description -n mingw64-gnutls
+GnuTLS TLS/SSL encryption library.  This library is cross-compiled
+for MinGW.
+
+%{?mingw_debug_package}
 %endif
 
 %prep
-%setup -q
+%{gpgverify} --keyring='%{SOURCE2}' --signature='%{SOURCE1}' --data='%{SOURCE0}'
 
-%patch1 -p1 -b .rpath
-%patch2 -p1 -b .nosrp
-%patch4 -p1 -b .fips-key
-%patch5 -p1 -b .padlock-disable
-%patch6 -p1 -b .eapp-data
-%patch7 -p1 -b .dh-1024
-%patch8 -p1
-%patch9 -p1
-%patch10 -p1
-%patch11 -p1
-%patch12 -p1
-%patch13 -p1
-%patch14 -p1
-%patch15 -p1
-%patch16 -p1
-%patch17 -p1
-%patch18 -p1
-%patch19 -p1
-%patch20 -p1
-%patch21 -p1
-%patch22 -p1
-%patch23 -p1
-%patch24 -p1
-%patch25 -p1
+%autosetup -p1 -S git
 
-sed 's/gnutls_srp.c//g' -i lib/Makefile.in
-sed 's/gnutls_srp.lo//g' -i lib/Makefile.in
-rm -f lib/minitasn1/*.c lib/minitasn1/*.h
-rm -f src/libopts/*.c src/libopts/*.h src/libopts/compat/*.c src/libopts/compat/*.h 
+%if %{with bundled_gmp}
+mkdir -p bundled_gmp
+pushd bundled_gmp
+tar --strip-components=1 -xf %{SOURCE100}
+patch -p1 < %{SOURCE101}
+patch -p1 < %{SOURCE102}
+popd
+%endif
 
-# Touch man pages to avoid them to be regenerated after patches which change
-# .def files
-touch doc/manpages/gnutls-serv.1
-touch doc/manpages/gnutls-cli.1
-
-# Fix permissions for files brought by patches
-chmod ugo+x %{_builddir}/%{name}-%{version}/tests/testpkcs11.sh
-chmod ugo+x %{_builddir}/%{name}-%{version}/tests/sni-hostname.sh
-
-%{SOURCE2} -e
-autoreconf -if
+%if 0%{?rhel} >= 10
+patch -p1 < %{SOURCE201}
+%endif
 
 %build
-export LDFLAGS="-Wl,--no-add-needed"
+%define _lto_cflags %{nil}
 
-%configure --with-libtasn1-prefix=%{_prefix} \
-	   --with-default-trust-store-pkcs11="pkcs11:model=p11-kit-trust;manufacturer=PKCS%2311%20Kit" \
-           --with-included-libcfg \
-	   --with-arcfour128 \
-	   --with-ssl3 \
+%if %{with bundled_gmp}
+pushd bundled_gmp
+autoreconf -ifv
+%configure --disable-cxx --disable-shared --enable-fat --with-pic
+%make_build
+popd
+
+export GMP_CFLAGS="-I$PWD/bundled_gmp"
+export GMP_LIBS="$PWD/bundled_gmp/.libs/libgmp.a"
+%endif
+
+%if %{with bootstrap}
+autoreconf -fi
+%endif
+
+sed -i -e 's|sys_lib_dlsearch_path_spec="/lib /usr/lib|sys_lib_dlsearch_path_spec="/lib /usr/lib %{_libdir}|g' configure
+rm -f lib/minitasn1/*.c lib/minitasn1/*.h
+
+echo "SYSTEM=NORMAL" >> tests/system.prio
+
+CCASFLAGS="$CCASFLAGS -Wa,--generate-missing-build-notes=yes"
+export CCASFLAGS
+
+%if %{with fips}
+eval $(sed -n 's/^\(\(NAME\|VERSION_ID\)=.*\)/OS_\1/p' /etc/os-release)
+export FIPS_MODULE_NAME="$OS_NAME ${OS_VERSION_ID%%.*} %name"
+%endif
+
+mkdir native_build
+pushd native_build
+%global _configure ../configure
+%configure \
+%if %{with fips}
+           --enable-fips140-mode \
+           --with-fips140-module-name="$FIPS_MODULE_NAME" \
+           --with-fips140-module-version=%{version}-%{srpmhash} \
+%endif
+%if %{with gost}
+    	   --enable-gost \
+%else
+	   --disable-gost \
+%endif
+%if %{with srp}
+           --enable-srp-authentication \
+%endif
+%ifarch %{ix86}
+           --disable-year2038 \
+%endif
+	   --enable-sha1-support \
            --disable-static \
            --disable-openssl-compatibility \
-           --disable-srp-authentication \
-	   --disable-non-suiteb-curves \
-	   --with-trousers-lib=%{_libdir}/libtspi.so.1 \
-	   --enable-fips140-mode \
-%if %{with guile}
-           --enable-guile \
-%ifarch %{arm}
-           --disable-largefile \
-%endif
+           --disable-non-suiteb-curves \
+           --with-system-priority-file=%{_sysconfdir}/crypto-policies/back-ends/gnutls.config \
+           --with-default-trust-store-pkcs11="pkcs11:" \
+%if %{with tpm12}
+           --with-trousers-lib=%{_libdir}/libtspi.so.1 \
 %else
-           --disable-guile \
+           --without-tpm \
 %endif
+%if %{with tpm2}
+           --with-tpm2 \
+%else
+           --without-tpm2 \
+%endif
+           --enable-ktls \
+           --htmldir=%{_docdir}/manual \
 %if %{with dane}
-	   --with-unbound-root-key-file=/var/lib/unbound/root.key \
-           --enable-dane \
+           --with-unbound-root-key-file=/var/lib/unbound/root.key \
+           --enable-libdane \
 %else
-           --disable-dane \
+           --disable-libdane \
 %endif
-           --disable-rpath
-# Note that the arm hack above is not quite right and the proper thing would
-# be to compile guile with largefile support.
-make %{?_smp_mflags}
+%if %{with certificate_compression}
+	   --with-zlib --with-brotli --with-zstd \
+%else
+	   --without-zlib --without-brotli --without-zstd \
+%endif
+%if %{with liboqs}
+           --with-liboqs \
+%else
+           --without-liboqs \
+%endif
+           --disable-rpath \
+           --with-default-priority-string="@SYSTEM"
 
-%define __spec_install_post \
-	%{?__debug_package:%{__debug_install_post}} \
-	%{__arch_install_post} \
-	%{__os_install_post} \
-	fipshmac -d $RPM_BUILD_ROOT%{_libdir} $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.28.*.* \
-	file=`basename $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.28.*.hmac` && mv $RPM_BUILD_ROOT%{_libdir}/$file $RPM_BUILD_ROOT%{_libdir}/.$file && ln -s .$file $RPM_BUILD_ROOT%{_libdir}/.libgnutls.so.28.hmac \
-%{nil}
+%make_build
+popd
+
+%if %{with mingw}
+# MinGW does not support CCASFLAGS
+export CCASFLAGS=""
+%mingw_configure \
+%if %{with srp}
+    --enable-srp-authentication \
+%endif
+    --enable-sha1-support \
+    --disable-static \
+    --disable-openssl-compatibility \
+    --disable-non-suiteb-curves \
+    --disable-libdane \
+    --disable-rpath \
+    --disable-nls \
+    --disable-cxx \
+    --enable-shared \
+    --without-tpm \
+    --with-included-unistring \
+    --disable-doc \
+    --with-default-priority-string="@SYSTEM" \
+    --without-p11-kit
+%mingw_make %{?_smp_mflags}
+%endif
 
 %install
-make install DESTDIR=$RPM_BUILD_ROOT
-rm -f $RPM_BUILD_ROOT%{_bindir}/srptool
-rm -f $RPM_BUILD_ROOT%{_bindir}/gnutls-srpcrypt
-cp -f %{SOURCE1} $RPM_BUILD_ROOT%{_bindir}/libgnutls-config
-rm -f $RPM_BUILD_ROOT%{_mandir}/man1/srptool.1
-rm -f $RPM_BUILD_ROOT%{_mandir}/man3/*srp*
+%make_install -C native_build
+pushd native_build
+make -C doc install-html DESTDIR=$RPM_BUILD_ROOT
 rm -f $RPM_BUILD_ROOT%{_infodir}/dir
 rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
-rm -f $RPM_BUILD_ROOT%{_libdir}/libguile*.a
 %if %{without dane}
 rm -f $RPM_BUILD_ROOT%{_libdir}/pkgconfig/gnutls-dane.pc
 %endif
 
+%if %{with fips}
+# doing it twice should be a no-op the second time,
+# and this way we avoid redefining it and missing a future change
+%global __debug_package 1
+%{__spec_install_post}
+fname=`basename $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.30.*.*`
+./lib/fipshmac "$RPM_BUILD_ROOT%{_libdir}/libgnutls.so.30" > "$RPM_BUILD_ROOT%{_libdir}/.$fname.hmac"
+sed -i "s^$RPM_BUILD_ROOT/usr^^" "$RPM_BUILD_ROOT%{_libdir}/.$fname.hmac"
+ln -s ".$fname.hmac" "$RPM_BUILD_ROOT%{_libdir}/.libgnutls.so.30.hmac"
+%endif
+
+%if %{with fips}
+%define __spec_install_post \
+	%{?__debug_package:%{__debug_install_post}} \
+	%{__arch_install_post} \
+	%{__os_install_post} \
+%{nil}
+%endif
+
 %find_lang gnutls
+popd
+
+%if %{with mingw}
+%mingw_make_install
+
+# Remove .la files
+rm -f $RPM_BUILD_ROOT%{mingw32_libdir}/*.la
+rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/*.la
+
+# The .def files aren't interesting for other binaries
+rm -f $RPM_BUILD_ROOT%{mingw32_bindir}/*.def
+rm -f $RPM_BUILD_ROOT%{mingw64_bindir}/*.def
+
+# Remove info and man pages which duplicate stuff in Fedora already.
+rm -rf $RPM_BUILD_ROOT%{mingw32_infodir}
+rm -rf $RPM_BUILD_ROOT%{mingw32_mandir}
+rm -rf $RPM_BUILD_ROOT%{mingw32_docdir}/gnutls
+
+rm -rf $RPM_BUILD_ROOT%{mingw64_infodir}
+rm -rf $RPM_BUILD_ROOT%{mingw64_mandir}
+rm -rf $RPM_BUILD_ROOT%{mingw64_docdir}/gnutls
+
+# Remove test libraries
+rm -f $RPM_BUILD_ROOT%{mingw32_libdir}/crypt32.dll*
+rm -f $RPM_BUILD_ROOT%{mingw32_libdir}/ncrypt.dll*
+rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/crypt32.dll*
+rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/ncrypt.dll*
+
+%mingw_debug_install_post
+%endif
 
 %check
-make check %{?_smp_mflags}
+%if %{with tests}
+pushd native_build
 
-%post -p /sbin/ldconfig
+# KeyUpdate is not yet supported in the kernel.
+xfail_tests=ktls_keyupdate.sh
 
-%postun -p /sbin/ldconfig
+# The ktls.sh test currently only supports kernel 5.11+.  This needs to
+# be checked at run time, as the koji builder might be using a different
+# version of kernel on the host than the one indicated by the
+# kernel-devel package.
 
-%post c++ -p /sbin/ldconfig
+case "$(uname -r)" in
+  4.* | 5.[0-9].* | 5.10.* )
+    xfail_tests="$xfail_tests ktls.sh"
+    ;;
+esac
 
-%postun c++ -p /sbin/ldconfig
-
-%post devel
-if [ -f %{_infodir}/gnutls.info.gz ]; then
-    /sbin/install-info %{_infodir}/gnutls.info.gz %{_infodir}/dir || :
-fi
-
-%preun devel
-if [ $1 = 0 -a -f %{_infodir}/gnutls.info.gz ]; then
-   /sbin/install-info --delete %{_infodir}/gnutls.info.gz %{_infodir}/dir || :
-fi
-
-%if %{with dane}
-%post dane -p /sbin/ldconfig
-
-%postun dane -p /sbin/ldconfig
+make check %{?_smp_mflags} GNUTLS_SYSTEM_PRIORITY_FILE=/dev/null XFAIL_TESTS="$xfail_tests"
+popd
 %endif
 
-%if %{with guile}
-%post guile -p /sbin/ldconfig
-
-%postun guile -p /sbin/ldconfig
+%files -f native_build/gnutls.lang
+%{_libdir}/libgnutls.so.30*
+%if %{with fips}
+%{_libdir}/.libgnutls.so.30*.hmac
 %endif
-
-%files -f gnutls.lang
-%defattr(-,root,root,-)
-%{_libdir}/libgnutls.so.28*
-%{_libdir}/.libgnutls.so.28*.hmac
-%doc COPYING COPYING.LESSER README AUTHORS NEWS THANKS
+%doc README.md AUTHORS NEWS THANKS
+%license LICENSE doc/COPYING doc/COPYING.LESSER
 
 %files c++
 %{_libdir}/libgnutlsxx.so.*
 
 %files devel
-%defattr(-,root,root,-)
-%{_bindir}/libgnutls*-config
 %{_includedir}/*
 %{_libdir}/libgnutls*.so
-%{_libdir}/.libgnutls.so.*.hmac
+
 %{_libdir}/pkgconfig/*.pc
 %{_mandir}/man3/*
 %{_infodir}/gnutls*
 %{_infodir}/pkcs11-vision*
+%{_docdir}/manual/*
 
 %files utils
-%defattr(-,root,root,-)
 %{_bindir}/certtool
+%if %{with tpm12}
 %{_bindir}/tpmtool
+%endif
 %{_bindir}/ocsptool
 %{_bindir}/psktool
 %{_bindir}/p11tool
-%{_bindir}/crywrap
+%if %{with srp}
+%{_bindir}/srptool
+%endif
 %if %{with dane}
 %{_bindir}/danetool
 %endif
@@ -349,514 +524,222 @@ fi
 
 %if %{with dane}
 %files dane
-%defattr(-,root,root,-)
 %{_libdir}/libgnutls-dane.so.*
 %endif
 
-%if %{with guile}
-%files guile
-%defattr(-,root,root,-)
-%{_libdir}/libguile*.so*
-%{_datadir}/guile/site/gnutls
-%{_datadir}/guile/site/gnutls.scm
+%if %{with fips}
+%files fips
+%endif
+
+%if %{with mingw}
+%files -n mingw32-%{name}
+%license LICENSE doc/COPYING doc/COPYING.LESSER
+%{mingw32_bindir}/certtool.exe
+%{mingw32_bindir}/gnutls-cli-debug.exe
+%{mingw32_bindir}/gnutls-cli.exe
+%{mingw32_bindir}/gnutls-serv.exe
+%{mingw32_bindir}/libgnutls-30.dll
+%{mingw32_bindir}/ocsptool.exe
+#%%{mingw32_bindir}/p11tool.exe
+%{mingw32_bindir}/psktool.exe
+%if %{with srp}
+%{mingw32_bindir}/srptool.exe
+%endif
+%{mingw32_libdir}/libgnutls.dll.a
+%{mingw32_libdir}/libgnutls-30.def
+%{mingw32_libdir}/pkgconfig/gnutls.pc
+%{mingw32_includedir}/gnutls/
+
+%files -n mingw64-%{name}
+%license LICENSE doc/COPYING doc/COPYING.LESSER
+%{mingw64_bindir}/certtool.exe
+%{mingw64_bindir}/gnutls-cli-debug.exe
+%{mingw64_bindir}/gnutls-cli.exe
+%{mingw64_bindir}/gnutls-serv.exe
+%{mingw64_bindir}/libgnutls-30.dll
+%{mingw64_bindir}/ocsptool.exe
+#%%{mingw64_bindir}/p11tool.exe
+%{mingw64_bindir}/psktool.exe
+%if %{with srp}
+%{mingw64_bindir}/srptool.exe
+%endif
+%{mingw64_libdir}/libgnutls.dll.a
+%{mingw64_libdir}/libgnutls-30.def
+%{mingw64_libdir}/pkgconfig/gnutls.pc
+%{mingw64_includedir}/gnutls/
 %endif
 
 %changelog
-* Tue Feb 12 2019 Anderson Sasaki <ansasaki@redhat.com> 3.3.29-9
-- Make sure the FIPS startup KAT selftest run for ECDSA (#1673919)
-
-* Fri Jul 20 2018 Anderson Sasaki <ansasaki@redhat.com> 3.3.29-8
-- Backported --sni-hostname option which allows overriding the hostname
-  advertised to the peer (#1444792)
-- Improved counter-measures in TLS CBC record padding for lucky13 attack
-  (CVE-2018-10844, #1589704, CVE-2018-10845, #1589707)
-- Added counter-measures for "Just in Time" PRIME + PROBE cache-based attack
-  (CVE-2018-10846, #1589708)
-- Address p11tool issue in object deletion in batch mode (#1375307)
-- Backport PKCS#11 tests from master branch. Some tests were disabled due to
-  unsupported features in 3.3.x (--load-pubkey and --test-sign options, ECC key
-  generation without login, and certificates do not inherit ID from the private
-  key)
-- p11tool explicitly marks certificates and public keys as NOT private objects
-  and private keys as private objects
-- Enlarge buffer size to support resumption with large keys (#1542461)
-- Legacy HMAC-SHA384 cipher suites were disabled by default
-- Added DSA key generation to p11tool (#1464896)
-- Address session renegotiation issue using client certificate (#1434091)
-- Address issue when importing private keys into Atos HSM (#1460125)
-
-* Fri May 26 2017 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.26-9
-- Address crash in OCSP status request extension, by eliminating the
-  unneeded parsing (CVE-2017-7507, #1455828)
-
-* Wed Apr 26 2017 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.26-7
-- Address interoperability issue with 3.5.x (#1388932)
-- Reject CAs which are both trusted and blacklisted in trust module (#1375303)
-- Added new functions to set issuer and subject ID in certificates (#1378373)
-- Reject connections with less than 1024-bit DH parameters (#1335931)
-- Fix issue that made GnuTLS parse only the first 32 extensions (#1383748)
-- Mention limitations of certtool in manpage (#1375463)
-- Read PKCS#8 files with HMAC-SHA256 -as generated by openssl 1.1 (#1380642)
-- Do not link directly to trousers but instead use dlopen (#1379739)
-- Fix incorrect OCSP validation (#1377569)
-- Added support for pin-value in PKCS#11 URIs (#1379283)
-- Added the --id option to p11tool (#1399232)
-- Improved sanity checks in RSA key generation (#1444780)
-- Addressed CVE-2017-5334, CVE-2017-5335, CVE-2017-5336, CVE-2017-5337,
-  CVE-2017-7869
-
-* Tue Jul 12 2016 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.24-1
-- Addressed issue with DSA public keys smaller than 2^1024 (#1238279)
-- Addressed two-byte buffer overflow in the DTLS-0.9 protocol (#1209365)
-- When writing certificates to smart cards write the CKA_ISSUER and
-  CKA_SERIAL_NUMBER fields to allow NSS reading them (#1272179)
-- Use the shared system certificate store (#1110750)
-- Address MD5 transcript collision attacks in TLS key exchange (#1289888, 
-  CVE-2015-7575)
-- Allow hashing data over 2^32 bytes (#1306953)
-- Ensure written PKCS#11 public keys are not marked as private (#1339453)
-- Ensure secure_getenv() is called on all uses of environment variables
-  (#1344591).
-- Fix issues related to PKCS #11 private key listing on certain HSMs
-  (#1351389)
-
-* Fri Jun  5 2015 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-13
-- Corrected reseed and respect of max_number_of_bits_per_request in 
-  FIPS140-2 mode. Also enhanced the initial tests. (#1228199)
-
-* Mon Jan  5 2015 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-12
-- corrected fix of handshake buffer resets (#1153106)
-
-* Thu Dec 11 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-11
-- Applied fix for urandom FD in FIPS140 mode (#1165047)
-- Applied fix for FIPS140-2 related regression (#1110696)
-
-* Tue Dec  2 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-10
-- Amended fix for urandom FD to avoid regression in FIPS140 mode (#1165047)
-
-* Tue Nov 18 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-9
-- Amended fix for FIPS enforcement issue (#1163848)
-- Fixed issue with applications that close all file descriptors (#1165047)
-
-* Thu Nov 13 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-8
-- Applied fix for FIPS enforcement issue when only /etc/system-fips
-  existed (#1163848)
-
-* Fri Nov  7 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-7
-- Applied fix for CVE-2014-8564 (#1161473)
-
-* Wed Oct 29 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-6
-- when generating test DH keys, enforce the q_bits.
-
-* Tue Oct 21 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-5
-- do not enforce FIPS140-2 policies in non-FIPS140 mode (#1154774)
-
-* Thu Oct 16 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-4
-- reverted change to use the p11-kit certificate storage (#1110750)
-- added functions to test DH/ECDH in FIPS-140-2 mode and fixed
-  RSA key generation (#1110696)
-- added manual dependencies on libtasn1 3.8 as well as p11-kit 0.20.7
-- fixed SHA224 in SSSE3 optimized code
-- fixed issue with handshake buffer resets (#1153106)
-- fixed issue in RSA key generation with specific seeds in FIPS140-2 mode
-
-* Wed Oct 01 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-3
-- added dependency on libtasn1 3.8 (#1110696)
-
-* Thu Sep 18 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-2
-- disabled padlock CPU support in FIPS140-2 mode
+## START: Generated by rpmautospec
+* Wed Feb 05 2025 Yaakov Selkowitz <yselkowi@redhat.com> - 3.8.8-4
+- Fix ELN build
 
-* Thu Sep 18 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-1
-- updated to latest stable release
+* Thu Jan 23 2025 Daiki Ueno <dueno@redhat.com> - 3.8.8-3
+- Disable GOST in RHEL-9 or later
 
-* Fri Sep 05 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8-1.b2
-- updated with latest bug fixes for 3.3.x branch
-- delete bundled files
+* Thu Jan 16 2025 Fedora Release Engineering <releng@fedoraproject.org> - 3.8.8-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_42_Mass_Rebuild
 
-* Thu Sep 04 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.8b1-1
-- updated with latest bug fixes for 3.3.x branch
+* Tue Nov 05 2024 Daiki Ueno <dueno@redhat.com> - 3.8.8-1
+- Update to 3.8.8 upstream release
+- Resolves: rhbz#2323786
 
-* Fri Aug 22 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.7-1
-- new upstream release (#1110696)
-- allow DSA/DH key generation with 1024 when not in FIPS140-2 mode (#1132705)
+* Tue Nov 05 2024 Daiki Ueno <dueno@redhat.com> - 3.8.7-7
+- Fix build with latest mingw-gcc
 
-* Fri Aug 15 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.7b1-1
-- updated with latest bug fixes for 3.3.x branch
-- utilize the p11-kit trust store (#1110750)
+* Tue Nov 05 2024 Daiki Ueno <dueno@redhat.com> - 3.8.7-6
+- Update downstream patches for 3.8.8
 
-* Tue Jul 29 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.6-2
-- correct path of fipscheck links
+* Tue Nov 05 2024 Daiki Ueno <dueno@redhat.com> - 3.8.7-5
+- Remove distribution suffix before updating to 3.8.8
 
-* Wed Jul 23 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.3.6-1
-- rebased to 3.3.6 and enabled fips mode (#1110696)
+* Fri Sep 13 2024 Richard W.M. Jones <rjones@redhat.com> - 3.8.7-4
+- Remove mingw p11tool.exe
 
-* Wed May 28 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> - 3.1.18-9
-- fix session ID length check (#1102027)
-- fixes null pointer dereference (#1101727)
+* Thu Sep 12 2024 Richard W.M. Jones <rjones@redhat.com> - 3.8.7-3
+- Remove mingw-p11-kit dependency (RHBZ#2312031)
 
-* Tue Feb 25 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> - 3.1.18-8
-- fixes CVE-2014-0092 (#1071815)
+* Fri Aug 16 2024 Daiki Ueno <dueno@redhat.com> - 3.8.7-2
+- Stop pulling in compression libraries through gnutls.pc
 
-* Fri Feb 14 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> - 3.1.18-7
-- fixes CVE-2014-1959
+* Thu Aug 15 2024 Daiki Ueno <dueno@redhat.com> - 3.8.7-1
+- Update to 3.8.7 upstream release
+- Resolves: rhbz#2305086
 
-* Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 3.1.18-6
-- Mass rebuild 2014-01-24
+* Thu Aug 15 2024 Daiki Ueno <dueno@redhat.com> - 3.8.6-9
+- Remove upstreamed patches before updating to 3.8.7
 
-* Tue Jan 14 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.1.18-5
-- Fixed issue with gnutls.info not being available (#1053487)
+* Mon Jul 29 2024 Daiki Ueno <dueno@redhat.com> - 3.8.6-8
+- liboqs: check whether Kyber768 is compiled in
 
-* Tue Jan 14 2014 Tomáš Mráz <tmraz@redhat.com> 3.1.18-4
-- build the crywrap tool
+* Fri Jul 26 2024 Daiki Ueno <dueno@redhat.com> - 3.8.6-7
+- Fix configure check on nettle_rsa_oaep_* functions
 
-* Thu Jan 02 2014 Nikos Mavrogiannopoulos <nmav@redhat.com> - 3.1.18-3
-- fixes crash in gnutls_global_deinit (#1047037)
+* Wed Jul 24 2024 Daiki Ueno <dueno@redhat.com> - 3.8.6-6
+- Enable X25519Kyber768Draft00 key exchange in TLS
 
-* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 3.1.18-2
-- Mass rebuild 2013-12-27
+* Mon Jul 22 2024 Daiki Ueno <dueno@redhat.com> - 3.8.6-5
+- Switch to using dlwrap for loading compression libraries
 
-* Mon Dec 23 2013 Nikos Mavrogiannopoulos <nmav@redhat.com> 3.1.18-1
-- new upstream release (#1040886)
-- Use the correct root key for unbound
+* Fri Jul 19 2024 Yaakov Selkowitz <yselkowi@redhat.com> - 3.8.6-4
+- Fix FIPS build with RPM 4.20
 
-* Tue Nov  5 2013 Tomáš Mráz <tmraz@redhat.com> 3.1.16-1
-- new upstream release
-- fixes CVE-2013-4466 off-by-one in dane_query_tlsa()
+* Thu Jul 18 2024 Fedora Release Engineering <releng@fedoraproject.org> - 3.8.6-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_41_Mass_Rebuild
 
-* Tue Oct 29 2013 Tomáš Mráz <tmraz@redhat.com> 3.1.15-1
-- new upstream release
-- fixes CVE-2013-4466 buffer overflow in handling DANE entries
+* Mon Jul 08 2024 Daiki Ueno <dueno@redhat.com> - 3.8.6-2
+- Bump nettle dependency to 3.10
 
-* Mon Jul 15 2013 Tomáš Mráz <tmraz@redhat.com> 3.1.13-1
-- new upstream release
+* Wed Jul 03 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.6-1
+- Update to 3.8.6 upstream release
 
-* Thu May 23 2013 Tomáš Mráz <tmraz@redhat.com> 3.1.11-1
-- new upstream release
-- enable ECC NIST Suite B curves
+* Mon Jun 17 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.5-6
+- Build with certificate compression enabled
 
-* Mon Mar 25 2013 Tomas Mraz <tmraz@redhat.com> 3.1.10-1
-- new upstream release
-- license of the library is back to LGPLv2.1+
+* Mon Jun 17 2024 Daiki Ueno <dueno@redhat.com> - 3.8.5-5
+- Bump release to build against newer nettle
 
-* Fri Mar 15 2013 Tomas Mraz <tmraz@redhat.com> 3.1.9-1
-- new upstream release
+* Thu May 16 2024 Alexander Sosedkin <asosedkin@redhat.com> - 3.8.5-4
+- Add gmp tarball to sources file, add gmp patch
 
-* Thu Mar  7 2013 Tomas Mraz <tmraz@redhat.com> 3.1.8-3
-- drop the temporary old library
+* Tue May 14 2024 Daiki Ueno <dueno@redhat.com> - 3.8.5-3
+- Add bcond to statically link to GMP
 
-* Tue Feb 26 2013 Tomas Mraz <tmraz@redhat.com> 3.1.8-2
-- don't send ECC algos as supported (#913797)
+* Wed Apr 24 2024 Daiki Ueno <dueno@redhat.com> - 3.8.5-2
+- Add virtual package to pull in nettle/gmp dependencies for FIPS
 
-* Thu Feb 21 2013 Tomas Mraz <tmraz@redhat.com> 3.1.8-1
-- new upstream version
+* Thu Apr 04 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.5-1
+- [packit] 3.8.5 upstream release
 
-* Wed Feb  6 2013 Tomas Mraz <tmraz@redhat.com> 3.1.7-1
-- new upstream version, requires rebuild of dependencies
-- this release temporarily includes old compatibility .so
+* Wed Mar 20 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.4-1
+- [packit] 3.8.4 upstream release
+- Resolves rhbz#2270320
 
-* Tue Feb  5 2013 Tomas Mraz <tmraz@redhat.com> 2.12.22-2
-- rebuilt with new libtasn1
-- make guile bindings optional - breaks i686 build and there is
-  no dependent package
+* Thu Feb 22 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.3-3
+- Fix mingw build failure
 
-* Tue Jan  8 2013 Tomas Mraz <tmraz@redhat.com> 2.12.22-1
-- new upstream version
+* Wed Jan 24 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.3-2
+- Update keyring
 
-* Wed Nov 28 2012 Tomas Mraz <tmraz@redhat.com> 2.12.21-2
-- use RSA bit sizes supported by libgcrypt in FIPS mode for security
-  levels (#879643)
+* Tue Jan 23 2024 Zoltan Fridrich <zfridric@redhat.com> - 3.8.3-1
+- [packit] 3.8.3 upstream release
 
-* Fri Nov  9 2012 Tomas Mraz <tmraz@redhat.com> 2.12.21-1
-- new upstream version
+* Fri Jan 19 2024 Fedora Release Engineering <releng@fedoraproject.org> - 3.8.2-4
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_40_Mass_Rebuild
 
-* Thu Nov  1 2012 Tomas Mraz <tmraz@redhat.com> 2.12.20-4
-- negotiate only FIPS approved algorithms in the FIPS mode (#871826)
+* Tue Dec 12 2023 Simon de Vlieger <cmdr@supakeen.com> - 3.8.2-3
+- Bump Nettle dependency.
 
-* Wed Aug  8 2012 Tomas Mraz <tmraz@redhat.com> 2.12.20-3
-- fix the gnutls-cli-debug manpage - patch by Peter Schiffer
+* Fri Dec 01 2023 Daiki Ueno <dueno@redhat.com> - 3.8.2-2
+- Tentatively revert newly added Ed448 keys support in PKCS#11
 
-* Thu Jul 19 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.12.20-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_18_Mass_Rebuild
+* Wed Nov 22 2023 Daiki Ueno <dueno@redhat.com> - 3.8.2-1
+- [packit] 3.8.2 upstream release
 
-* Mon Jun 18 2012 Tomas Mraz <tmraz@redhat.com> 2.12.20-1
-- new upstream version
+* Wed Nov 22 2023 Daiki Ueno <dueno@redhat.com> - 3.8.1-4
+- Remove patches no longer needed in 3.8.2
 
-* Fri May 18 2012 Tomas Mraz <tmraz@redhat.com> 2.12.19-1
-- new upstream version
+* Thu Nov 09 2023 Daiki Ueno <dueno@redhat.com> - 3.8.1-3
+- Skip KTLS test if the host kernel is older than 5.11
 
-* Thu Mar 29 2012 Tomas Mraz <tmraz@redhat.com> 2.12.18-1
-- new upstream version
+* Tue Aug 29 2023 Stephen Gallagher <sgallagh@redhat.com> - 3.8.1-2
+- Don't build with SRP on RHEL
 
-* Thu Mar  8 2012 Tomas Mraz <tmraz@redhat.com> 2.12.17-1
-- new upstream version
-- fix leaks in key generation (#796302)
+* Fri Aug 25 2023 Zoltan Fridrich <zfridric@redhat.com> - 3.8.1-1
+- [packit] 3.8.1 upstream release
 
-* Fri Feb 03 2012 Kevin Fenzi <kevin@scrye.com> - 2.12.14-3
-- Disable largefile on arm arch. (#787287)
+* Thu Aug 24 2023 Daiki Ueno <dueno@redhat.com> - 3.8.0-8
+- Migrate License field to SPDX license identifier
 
-* Fri Jan 13 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.12.14-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_17_Mass_Rebuild
+* Wed Jul 19 2023 Fedora Release Engineering <releng@fedoraproject.org> - 3.8.0-7
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_39_Mass_Rebuild
 
-* Tue Nov  8 2011 Tomas Mraz <tmraz@redhat.com> 2.12.14-1
-- new upstream version
+* Tue May 23 2023 Peter Leitmann <peto.leitmann@gmail.com> - 3.8.0-6
+- Add TMT interop tests
 
-* Mon Oct 24 2011 Tomas Mraz <tmraz@redhat.com> 2.12.12-1
-- new upstream version
+* Thu Apr 13 2023 Daiki Ueno <dueno@redhat.com> - 3.8.0-5
+- Fix leftover of the previous %%bcond change
 
-* Thu Sep 29 2011 Tomas Mraz <tmraz@redhat.com> 2.12.11-1
-- new upstream version
+* Tue Apr 11 2023 Daiki Ueno <dueno@redhat.com> - 3.8.0-4
+- Use %%bcond instead of %%global for srp and mingw support
 
-* Fri Aug 26 2011 Tomas Mraz <tmraz@redhat.com> 2.12.9-1
-- new upstream version
+* Sat Mar 11 2023 Richard W.M. Jones <rjones@redhat.com> - 3.8.0-3
+- Fix desychronisation with kTLS:
+  https://gitlab.com/gnutls/gnutls/-/issues/1470
 
-* Tue Aug 16 2011 Tomas Mraz <tmraz@redhat.com> 2.12.8-1
-- new upstream version
+* Thu Mar 02 2023 Daniel P. Berrangé <berrange@redhat.com> - 3.8.0-2
+- Disable GNULIB's year2038 support for 64-bit time_t
 
-* Mon Jul 25 2011 Tomas Mraz <tmraz@redhat.com> 2.12.7-2
-- fix problem when using new libgcrypt
-- split libgnutlsxx to a subpackage (#455146)
-- drop libgnutls-openssl (#460310)
+* Thu Feb 16 2023 Zoltan Fridrich <zfridric@redhat.com> - 3.8.0-1
+- [packit] 3.8.0 upstream release
 
-* Tue Jun 21 2011 Tomas Mraz <tmraz@redhat.com> 2.12.7-1
-- new upstream version
+* Tue Feb 14 2023 Zoltan Fridrich <zfridric@redhat.com> - 3.7.8-14
+- Prepare for release
 
-* Mon May  9 2011 Tomas Mraz <tmraz@redhat.com> 2.12.4-1
-- new upstream version
+* Fri Jan 20 2023 Frantisek Krenzelok <krenzelok.frantisek@gmail.com> - 3.7.8-13
+- KTLS: disable ktls_keyupdate & tls1.2 chachapoly tests
 
-* Tue Apr 26 2011 Tomas Mraz <tmraz@redhat.com> 2.12.3-1
-- new upstream version
+* Fri Jan 20 2023 Frantisek Krenzelok <krenzelok.frantisek@gmail.com> - 3.7.8-12
+- KTLS additional ciphersuites
 
-* Mon Apr 18 2011 Tomas Mraz <tmraz@redhat.com> 2.12.2-1
-- new upstream version
+* Thu Jan 19 2023 Fedora Release Engineering <releng@fedoraproject.org> - 3.7.8-11
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_38_Mass_Rebuild
 
-* Thu Mar  3 2011 Tomas Mraz <tmraz@redhat.com> 2.10.5-1
-- new upstream version
+* Wed Dec 14 2022 Frantisek Krenzelok <krenzelok.frantisek@gmail.com> - 3.7.8-10
+- gcc-analyzer: suppress warnings
 
-* Tue Feb 08 2011 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.10.4-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_15_Mass_Rebuild
+* Thu Oct 27 2022 Daniel P. Berrangé <berrange@redhat.com> - 3.7.8-9
+- Cross-compiled mingw sub-RPMs should be 'noarch'
 
-* Wed Dec  8 2010 Tomas Mraz <tmraz@redhat.com> 2.10.4-1
-- new upstream version
+* Wed Oct 19 2022 Zoltan Fridrich <zfridric@redhat.com> - 3.7.8-8
+- Add conditions for mingw
 
-* Thu Dec  2 2010 Tomas Mraz <tmraz@redhat.com> 2.10.3-2
-- fix buffer overflow in gnutls-serv (#659259)
+* Tue Oct 18 2022 Michael Cronenworth <mike@cchtml.com> - 3.7.8-6
+- Initial MinGW package support
 
-* Fri Nov 19 2010 Tomas Mraz <tmraz@redhat.com> 2.10.3-1
-- new upstream version
+* Tue Oct 18 2022 Zoltan Fridrich <zfridric@redhat.com> - 3.7.8-5
+- Use make macros
 
-* Thu Sep 30 2010 Tomas Mraz <tmraz@redhat.com> 2.10.2-1
-- new upstream version
-
-* Wed Sep 29 2010 jkeating - 2.10.1-4
-- Rebuilt for gcc bug 634757
-
-* Thu Sep 23 2010 Tomas Mraz <tmraz@redhat.com> 2.10.1-3
-- more patching for internal errors regression (#629858)
-  patch by Vivek Dasmohapatra
-
-* Tue Sep 21 2010 Tomas Mraz <tmraz@redhat.com> 2.10.1-2
-- backported patch from upstream git hopefully fixing internal errors
-  (#629858)
-
-* Wed Aug  4 2010 Tomas Mraz <tmraz@redhat.com> 2.10.1-1
-- new upstream version
-
-* Wed Jun  2 2010 Tomas Mraz <tmraz@redhat.com> 2.8.6-2
-- add support for safe renegotiation CVE-2009-3555 (#533125)
-
-* Wed May 12 2010 Tomas Mraz <tmraz@redhat.com> 2.8.6-1
-- upgrade to a new upstream version
-
-* Mon Feb 15 2010 Rex Dieter <rdieter@fedoraproject.org> 2.8.5-4
-- FTBFS gnutls-2.8.5-3.fc13: ImplicitDSOLinking (#564624)
-
-* Thu Jan 28 2010 Tomas Mraz <tmraz@redhat.com> 2.8.5-3
-- drop superfluous rpath from binaries
-- do not call autoreconf during build
-- specify the license on utils subpackage
-
-* Mon Jan 18 2010 Tomas Mraz <tmraz@redhat.com> 2.8.5-2
-- do not create static libraries (#556052)
-
-* Mon Nov  2 2009 Tomas Mraz <tmraz@redhat.com> 2.8.5-1
-- upgrade to a new upstream version
-
-* Wed Sep 23 2009 Tomas Mraz <tmraz@redhat.com> 2.8.4-1
-- upgrade to a new upstream version
-
-* Fri Aug 14 2009 Tomas Mraz <tmraz@redhat.com> 2.8.3-1
-- upgrade to a new upstream version
-
-* Fri Jul 24 2009 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.8.1-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_12_Mass_Rebuild
-
-* Wed Jun 10 2009 Tomas Mraz <tmraz@redhat.com> 2.8.1-1
-- upgrade to a new upstream version
-
-* Wed Jun  3 2009 Tomas Mraz <tmraz@redhat.com> 2.8.0-1
-- upgrade to a new upstream version
-
-* Mon May  4 2009 Tomas Mraz <tmraz@redhat.com> 2.6.6-1
-- upgrade to a new upstream version - security fixes
-
-* Tue Apr 14 2009 Tomas Mraz <tmraz@redhat.com> 2.6.5-1
-- upgrade to a new upstream version, minor bugfixes only
-
-* Fri Mar  6 2009 Tomas Mraz <tmraz@redhat.com> 2.6.4-1
-- upgrade to a new upstream version
-
-* Tue Feb 24 2009 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.6.3-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_11_Mass_Rebuild
-
-* Mon Dec 15 2008 Tomas Mraz <tmraz@redhat.com> 2.6.3-1
-- upgrade to a new upstream version
-
-* Thu Dec  4 2008 Tomas Mraz <tmraz@redhat.com> 2.6.2-1
-- upgrade to a new upstream version
-
-* Tue Nov 11 2008 Tomas Mraz <tmraz@redhat.com> 2.4.2-3
-- fix chain verification issue CVE-2008-4989 (#470079)
-
-* Thu Sep 25 2008 Tomas Mraz <tmraz@redhat.com> 2.4.2-2
-- add guile subpackage (#463735)
-- force new libtool through autoreconf to drop unnecessary rpaths
-
-* Tue Sep 23 2008 Tomas Mraz <tmraz@redhat.com> 2.4.2-1
-- new upstream version
-
-* Tue Jul  1 2008 Tomas Mraz <tmraz@redhat.com> 2.4.1-1
-- new upstream version
-- correct the license tag
-- explicit --with-included-opencdk not needed
-- use external lzo library, internal not included anymore
-
-* Tue Jun 24 2008 Tomas Mraz <tmraz@redhat.com> 2.4.0-1
-- upgrade to latest upstream
-
-* Tue May 20 2008 Tomas Mraz <tmraz@redhat.com> 2.0.4-3
-- fix three security issues in gnutls handshake - GNUTLS-SA-2008-1
-  (#447461, #447462, #447463)
-
-* Mon Feb  4 2008 Joe Orton <jorton@redhat.com> 2.0.4-2
-- use system libtasn1
-
-* Tue Dec  4 2007 Tomas Mraz <tmraz@redhat.com> 2.0.4-1
-- upgrade to latest upstream
-
-* Tue Aug 21 2007 Tomas Mraz <tmraz@redhat.com> 1.6.3-2
-- license tag fix
-
-* Wed Jun  6 2007 Tomas Mraz <tmraz@redhat.com> 1.6.3-1
-- upgrade to latest upstream (#232445)
-
-* Tue Apr 10 2007 Tomas Mraz <tmraz@redhat.com> 1.4.5-2
-- properly require install-info (patch by Ville Skyttä)
-- standard buildroot and use dist tag
-- add COPYING and README to doc
-
-* Wed Feb  7 2007 Tomas Mraz <tmraz@redhat.com> 1.4.5-1
-- new upstream version
-- drop libtermcap-devel from buildrequires
-
-* Thu Sep 14 2006 Tomas Mraz <tmraz@redhat.com> 1.4.1-2
-- detect forged signatures - CVE-2006-4790 (#206411), patch
-  from upstream
-
-* Tue Jul 18 2006 Tomas Mraz <tmraz@redhat.com> - 1.4.1-1
-- upgrade to new upstream version, only minor changes
-
-* Wed Jul 12 2006 Jesse Keating <jkeating@redhat.com> - 1.4.0-1.1
-- rebuild
-
-* Wed Jun 14 2006 Tomas Mraz <tmraz@redhat.com> - 1.4.0-1
-- upgrade to new upstream version (#192070), rebuild
-  of dependent packages required
-
-* Tue May 16 2006 Tomas Mraz <tmraz@redhat.com> - 1.2.10-2
-- added missing buildrequires
-
-* Mon Feb 13 2006 Tomas Mraz <tmraz@redhat.com> - 1.2.10-1
-- updated to new version (fixes CVE-2006-0645)
-
-* Fri Feb 10 2006 Jesse Keating <jkeating@redhat.com> - 1.2.9-3.2
-- bump again for double-long bug on ppc(64)
-
-* Tue Feb 07 2006 Jesse Keating <jkeating@redhat.com> - 1.2.9-3.1
-- rebuilt for new gcc4.1 snapshot and glibc changes
-
-* Tue Jan  3 2006 Jesse Keating <jkeating@redhat.com> 1.2.9-3
-- rebuilt
-
-* Fri Dec  9 2005 Tomas Mraz <tmraz@redhat.com> 1.2.9-2
-- replaced *-config scripts with calls to pkg-config to
-  solve multilib conflicts
-
-* Wed Nov 23 2005 Tomas Mraz <tmraz@redhat.com> 1.2.9-1
-- upgrade to newest upstream
-- removed .la files (#172635)
-
-* Sun Aug  7 2005 Tomas Mraz <tmraz@redhat.com> 1.2.6-1
-- upgrade to newest upstream (rebuild of dependencies necessary)
-
-* Mon Jul  4 2005 Tomas Mraz <tmraz@redhat.com> 1.0.25-2
-- split the command line tools to utils subpackage
-
-* Sat Apr 30 2005 Tomas Mraz <tmraz@redhat.com> 1.0.25-1
-- new upstream version fixes potential DOS attack
-
-* Sat Apr 23 2005 Tomas Mraz <tmraz@redhat.com> 1.0.24-2
-- readd the version script dropped by upstream
-
-* Fri Apr 22 2005 Tomas Mraz <tmraz@redhat.com> 1.0.24-1
-- update to the latest upstream version on the 1.0 branch
-
-* Wed Mar  2 2005 Warren Togami <wtogami@redhat.com> 1.0.20-6
-- gcc4 rebuild
-
-* Tue Jan  4 2005 Ivana Varekova <varekova@redhat.com> 1.0.20-5
-- add gnutls Requires zlib-devel (#144069)
-
-* Mon Nov 08 2004 Colin Walters <walters@redhat.com> 1.0.20-4
-- Make gnutls-devel Require libgcrypt-devel
-
-* Tue Sep 21 2004 Jeff Johnson <jbj@redhat.com> 1.0.20-3
-- rebuild with release++, otherwise unchanged.
-
-* Tue Sep  7 2004 Jeff Johnson <jbj@redhat.com> 1.0.20-2
-- patent tainted SRP code removed.
-
-* Sun Sep  5 2004 Jeff Johnson <jbj@redhat.com> 1.0.20-1
-- update to 1.0.20.
-- add --with-included-opencdk --with-included-libtasn1
-- add --with-included-libcfg --with-included-lzo
-- add --disable-srp-authentication.
-- do "make check" after build.
-
-* Fri Mar 21 2003 Jeff Johnson <jbj@redhat.com> 0.9.2-1
-- upgrade to 0.9.2
-
-* Tue Jun 25 2002 Jeff Johnson <jbj@redhat.com> 0.4.4-1
-- update to 0.4.4.
-
-* Fri Jun 21 2002 Tim Powers <timp@redhat.com>
-- automated rebuild
-
-* Sat May 25 2002 Jeff Johnson <jbj@redhat.com> 0.4.3-1
-- update to 0.4.3.
-
-* Tue May 21 2002 Jeff Johnson <jbj@redhat.com> 0.4.2-1
-- update to 0.4.2.
-- change license to LGPL.
-- include splint annotations patch.
-
-* Tue Apr  2 2002 Nalin Dahyabhai <nalin@redhat.com> 0.4.0-1
-- update to 0.4.0
-
-* Thu Jan 17 2002 Nalin Dahyabhai <nalin@redhat.com> 0.3.2-1
-- update to 0.3.2
-
-* Thu Jan 10 2002 Nalin Dahyabhai <nalin@redhat.com> 0.3.0-1
-- add a URL
-
-* Thu Dec 20 2001 Nalin Dahyabhai <nalin@redhat.com>
-- initial package
+* Tue Oct 18 2022 Zoltan Fridrich <zfridric@redhat.com> - 3.7.8-4
+- RPMAUTOSPEC: unresolvable merge
+## END: Generated by rpmautospec
