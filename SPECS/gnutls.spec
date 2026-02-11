@@ -9,7 +9,7 @@
 Summary: A TLS protocol implementation
 Name: gnutls
 Version: 3.3.29
-Release: %{?xsrel}.0%{?dist}
+Release: %{?xsrel}.1%{?dist}
 # The libraries are LGPLv2.1+, utilities are GPLv3+
 License: GPLv3+ and LGPLv2+
 Group: System Environment/Libraries
@@ -86,6 +86,9 @@ Requires: %{name}-c++%{?_isa} = %{version}-%{release}
 %endif
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
+%else
+# Remove previous installed version, to avoid "Failed dependencies" on update
+Obsoletes: gnutls-dane < %{version}-%{release}
 %endif
 Requires: pkgconfig
 Requires(post): /sbin/install-info
@@ -98,6 +101,8 @@ Group: Applications/System
 Requires: %{name}%{?_isa} = %{version}-%{release}
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
+%else
+Obsoletes: gnutls-dane < %{version}-%{release}
 %endif
 
 %if %{with dane}
@@ -241,11 +246,6 @@ rm -f $RPM_BUILD_ROOT%{_mandir}/man3/*srp*
 rm -f $RPM_BUILD_ROOT%{_infodir}/dir
 rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
 rm -f $RPM_BUILD_ROOT%{_libdir}/libguile*.a
-%if %{without dane}
-rm -f $RPM_BUILD_ROOT%{_libdir}/pkgconfig/gnutls-dane.pc
-rm -f $RPM_BUILD_ROOT%{_libdir}/libgnutls-dane.so*
-rm -f $RPM_BUILD_ROOT%{_bindir}/danetool
-%endif
 
 %find_lang gnutls
 
@@ -335,7 +335,9 @@ fi
 %endif
 
 %changelog
-* Fri Jan 23 2026 Philippe Coval <philippe.coval@vates.tech> - 3.3.29-10.0
+* Thu Feb 12 2026 Philippe Coval <philippe.coval@vates.tech> - 3.3.29-10.1
+- Remove installed gnutls-dane if no more supported
+- Remove unnecessary removal of non built files
 - Make c++ lib optional (disabled by default)
 
 * Mon Oct 21 2024 Deli Zhang <deli.zhang@citrix.com> - 3.3.29-10
