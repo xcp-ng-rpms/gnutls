@@ -9,7 +9,7 @@
 Summary: A TLS protocol implementation
 Name: gnutls
 Version: 3.3.29
-Release: %{?xsrel}.1%{?dist}
+Release: %{?xsrel}.1~XCPNG2710.3%{?dist}
 # The libraries are LGPLv2.1+, utilities are GPLv3+
 License: GPLv3+ and LGPLv2+
 Group: System Environment/Libraries
