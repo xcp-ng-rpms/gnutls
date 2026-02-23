@@ -1,0 +1,37 @@
+diff --git a/src/cli-args.def b/src/cli-args.def
+index c661f458b..11d66ae8a 100644
+--- a/src/cli-args.def
++++ b/src/cli-args.def
+@@ -80,6 +80,13 @@ flag = {
+     doc       = "Connect, establish a session and rehandshake immediately.";
+ };
+ 
++flag = {
++    name      = sni-hostname;
++    descrip   = "Server's hostname for server name indication extension";
++    arg-type  = string;
++    doc      = "Set explicitly the server name used in the TLS server name indication extension. That is useful when testing with servers setup on different DNS name than the intended. If not specified, the provided hostname is used.";
++};
++
+ flag = {
+     name      = starttls;
+     value     = s;
+diff --git a/src/cli.c b/src/cli.c
+index 82d8e1166..f3d159a29 100644
+--- a/src/cli.c
++++ b/src/cli.c
+@@ -638,7 +638,10 @@ static gnutls_session_t init_tls_session(const char *hostname)
+ 	/* allow the use of private ciphersuites.
+ 	 */
+ 	if (disable_extensions == 0 && disable_sni == 0) {
+-		if (hostname != NULL && is_ip(hostname) == 0)
++		if (HAVE_OPT(SNI_HOSTNAME)) {
++			gnutls_server_name_set(session, GNUTLS_NAME_DNS,
++					       OPT_ARG(SNI_HOSTNAME), strlen(OPT_ARG(SNI_HOSTNAME)));
++		} else if (hostname != NULL && is_ip(hostname) == 0)
+ 			gnutls_server_name_set(session, GNUTLS_NAME_DNS,
+ 					       hostname, strlen(hostname));
+ 	}
+-- 
+2.14.3
+

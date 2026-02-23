@@ -1,0 +1,82 @@
+diff --git a/lib/pkcs11.c b/lib/pkcs11.c
+index 4fdd58f39..68ee2960a 100644
+--- a/lib/pkcs11.c
++++ b/lib/pkcs11.c
+@@ -2368,6 +2368,11 @@ retrieve_pin(struct pin_info_st *pin_info, struct p11_kit_uri *info,
+ 	/* First check for pin-value field */
+ 	pinfile = p11_kit_uri_get_pin_value(info);
+ 	if (pinfile != NULL) {
++		if (attempts > 0) {
++			_gnutls_debug_log("p11: refusing more than a single attempts with pin-value\n");
++			return gnutls_assert_val(GNUTLS_E_PKCS11_PIN_ERROR);
++		}
++
+ 		_gnutls_debug_log("p11: Using pin-value to retrieve PIN\n");
+ 		*pin = p11_kit_pin_new_for_string(pinfile);
+ 		if (*pin != NULL)
+@@ -2376,6 +2381,11 @@ retrieve_pin(struct pin_info_st *pin_info, struct p11_kit_uri *info,
+ 		/* Check if a pinfile is specified, and use that if possible */
+ 		pinfile = p11_kit_uri_get_pin_source(info);
+ 		if (pinfile != NULL) {
++			if (attempts > 0) {
++				_gnutls_debug_log("p11: refusing more than a single attempts with pin-source\n");
++				return gnutls_assert_val(GNUTLS_E_PKCS11_PIN_ERROR);
++			}
++
+ 			_gnutls_debug_log("p11: Using pin-source to retrieve PIN\n");
+ 			ret =
+ 			    retrieve_pin_from_source(pinfile, token_info, attempts,
+diff --git a/tests/pkcs11/pkcs11-import-with-pin.c b/tests/pkcs11/pkcs11-import-with-pin.c
+index e43591927..ecc98175d 100644
+--- a/tests/pkcs11/pkcs11-import-with-pin.c
++++ b/tests/pkcs11/pkcs11-import-with-pin.c
+@@ -157,6 +157,16 @@ void doit()
+ 	assert(gnutls_privkey_init(&pkey) == 0);
+ 
+ 	/* Test 1
++	 * Try importing with wrong pin-value */
++	ret = gnutls_privkey_import_pkcs11_url(pkey, SOFTHSM_URL";object=cert;object-type=private;pin-value=XXXX");
++	if (ret != GNUTLS_E_PKCS11_PIN_ERROR) {
++		fprintf(stderr, "unexpected error in %d: %s\n", __LINE__, gnutls_strerror(ret));
++		exit(1);
++	}
++	gnutls_privkey_deinit(pkey);
++	assert(gnutls_privkey_init(&pkey) == 0);
++
++	/* Test 2
+ 	 * Try importing with pin-value */
+ 	ret = gnutls_privkey_import_pkcs11_url(pkey, SOFTHSM_URL";object=cert;object-type=private;pin-value="PIN);
+ 	if (ret < 0) {
+@@ -169,13 +179,26 @@ void doit()
+ 	gnutls_free(sig.data);
+ 	gnutls_privkey_deinit(pkey);
+ 
+-	/* Test 2
+-	 * Try importing with pin-source */
++	/* Test 3
++	 * Try importing with wrong pin-source */
+ 	track_temp_files();
+ 	get_tmpname(file);
+ 
+-	write_pin(file, PIN);
++	write_pin(file, "XXXX");
++
++	assert(gnutls_privkey_init(&pkey) == 0);
++	snprintf(buf, sizeof(buf), "%s;object=cert;object-type=private;pin-source=%s", SOFTHSM_URL, file);
++	ret = gnutls_privkey_import_pkcs11_url(pkey, buf);
++	if (ret != GNUTLS_E_PKCS11_PIN_ERROR) {
++		fprintf(stderr, "error in %d: %s\n", __LINE__, gnutls_strerror(ret));
++		exit(1);
++	}
++
++	gnutls_privkey_deinit(pkey);
+ 
++	/* Test 4
++	 * Try importing with pin-source */
++	write_pin(file, PIN);
+ 
+ 	assert(gnutls_privkey_init(&pkey) == 0);
+ 	snprintf(buf, sizeof(buf), "%s;object=cert;object-type=private;pin-source=%s", SOFTHSM_URL, file);
+-- 
+2.14.3
+
