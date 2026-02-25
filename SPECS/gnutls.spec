@@ -1,68 +1,78 @@
-%global package_speccommit 3f9f8b250422d086e1f6c64730d20febb179107e
-%global usver 3.3.29
-%global xsver 10
+%global package_speccommit 29274ee556d24bb1ea800cda086d786099c9fe72
+%global usver 3.8.8
+%global xsver 3
 %global xsrel %{xsver}%{?xscount}%{?xshash}
 
+Version: 3.8.8
+Release: %{?xsrel}%{?dist}
+
+%bcond_with bootstrap
 %bcond_with dane
-%bcond_with guile
+%bcond_without fips
+%bcond_without gost
+%bcond_with certificate_compression
+%bcond_with liboqs
+%bcond_without tests
+%bcond_with srp
+
+%if 0%{?xenserver} < 9
+# Disable ktls as XS8 kernel does not support it yet
+%bcond_with ktls
+%bcond_with crypto_policies
+# XS8 gcc is not new enough, use devtoolset instead
+%bcond_without devtoolset
+%else
+%bcond_without ktls
+%bcond_without crypto_policies
+%bcond_with devtoolset
+%endif
+
 Summary: A TLS protocol implementation
 Name: gnutls
-Version: 3.3.29
-Release: %{?xsrel}%{?dist}
 # The libraries are LGPLv2.1+, utilities are GPLv3+
-License: GPLv3+ and LGPLv2+
-Group: System Environment/Libraries
-BuildRequires: p11-kit-devel >= 0.23.1, gettext
-BuildRequires: zlib-devel, readline-devel, libtasn1-devel >= 3.8
-BuildRequires: libtool, automake, autoconf, texinfo
-BuildRequires: autogen-libopts-devel >= 5.18 autogen gettext-devel
-BuildRequires: nettle-devel >= 2.7.1
-BuildRequires: trousers-devel >= 0.3.11.2
-BuildRequires: libidn-devel
-BuildRequires: gperf
-BuildRequires: fipscheck
-BuildRequires: softhsm, net-tools
+License: GPL-3.0-or-later AND LGPL-2.1-or-later
+BuildRequires: p11-kit-devel >= 0.21.3, gettext-devel
+BuildRequires: readline-devel, libtasn1-devel >= 4.3
+%if %{with certificate_compression}
+BuildRequires: zlib-devel, brotli-devel, libzstd-devel
+%endif
+%if %{with liboqs}
+BuildRequires: liboqs-devel
+%endif
+%if %{with bootstrap}
+BuildRequires: automake, autoconf, gperf, libtool, texinfo
+%endif
+BuildRequires: nettle-devel >= 3.5.1
+
+BuildRequires: libunistring-devel
+BuildRequires: libidn2-devel
+%if %{with devtoolset}
+BuildRequires: devtoolset-11-gcc, devtoolset-11-gcc-c++
+%else
+BuildRequires: gcc, gcc-c++
+%endif
+BuildRequires: git-core
+
+# for a sanity check on cert loading
+BuildRequires: p11-kit-trust, ca-certificates
+%if %{with crypto_policies}
+Requires: crypto-policies
+%endif
 Requires: p11-kit-trust
-# The automatic dependency on libtasn1 and p11-kit is insufficient,
-Requires: libtasn1 >= 3.9
-Requires: p11-kit >= 0.23.1
-Requires: trousers >= 0.3.11.2
+Requires: libtasn1 >= 4.3
+Requires: nettle >= 3.4.1
+
 %if %{with dane}
 BuildRequires: unbound-devel unbound-libs
 %endif
-%if %{with guile}
-BuildRequires: guile-devel
-%endif
+BuildRequires: make
+
 URL: http://www.gnutls.org/
-Source0: gnutls-3.3.29-hobbled.tar.xz
-Source1: libgnutls-config
-Source2: hobble-gnutls
+%define short_version %(echo %{version} | grep -m1 -o "[0-9]*\.[0-9]*" | head -1)
+Source0: gnutls-3.8.8.tar.xz
+Source1: config
 Patch0: gnutls-3.2.7-rpath.patch
-Patch1: gnutls-3.1.11-nosrp.patch
-Patch2: gnutls-3.3.8-fips-key.patch
-Patch3: gnutls-3.3.8-padlock-disable.patch
-Patch4: gnutls-3.3.22-eapp-data.patch
-Patch5: gnutls-3.3.26-dh-params-1024.patch
-Patch6: gnutls-3.3.29-serv-sni-hostname.patch
-Patch7: gnutls-3.3.29-serv-unrec-name.patch
-Patch8: gnutls-3.3.29-cli-sni-hostname.patch
-Patch9: gnutls-3.3.29-tests-sni-hostname.patch
-Patch10: gnutls-3.3.29-pkcs11-retrieve-pin-from-uri-once.patch
-Patch11: gnutls-3.3.29-dummy-wait-account-len-field.patch
-Patch12: gnutls-3.3.29-dummy-wait-hash-same-amount-of-blocks.patch
-Patch13: gnutls-3.3.29-cbc-mac-verify-ssl3-min-pad.patch
-Patch14: gnutls-3.3.29-remove-hmac-sha384-sha256-from-default.patch
-Patch15: gnutls-3.3.29-do-not-run-sni-hostname-windows.patch
-Patch16: gnutls-3.3.29-testpkcs11.patch
-Patch17: gnutls-3.3.29-disable-failing-tests.patch
-Patch18: gnutls-3.3.29-do-not-mark-object-as-private.patch
-Patch19: gnutls-3.3.29-re-enable-check-cert-write.patch
-Patch20: gnutls-3.3.29-tests-pkcs11-increase-RSA-gen-size.patch
-Patch21: gnutls-3.3.29-serv-large-key-resumption.patch
-Patch22: gnutls-3.3.29-bring-back-hmac-sha256.patch
-Patch23: gnutls-3.3.29-fips140-fix-ecdsa-kat-selftest.patch
-Patch24: 0001-CP-50333-Regenerate-expired-test-certificates.patch
-Patch25: 0001-CP-50333-Skip-certficate-chain-export-test.patch
+Patch1: gnutls-3.8.8-tests-ktls-skip-tls12-chachapoly.patch
 
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
 Provides: bundled(gnulib) = 20130424
@@ -73,20 +83,16 @@ Requires: %{name}%{?_isa} = %{version}-%{release}
 
 %package devel
 Summary: Development files for the %{name} package
-Group: Development/Libraries
 Requires: %{name}%{?_isa} = %{version}-%{release}
 Requires: %{name}-c++%{?_isa} = %{version}-%{release}
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
 %endif
 Requires: pkgconfig
-Requires(post): /sbin/install-info
-Requires(preun): /sbin/install-info
 
 %package utils
-License: GPLv3+
+License: GPL-3.0-or-later
 Summary: Command line tools for TLS protocol
-Group: Applications/System
 Requires: %{name}%{?_isa} = %{version}-%{release}
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
@@ -96,14 +102,6 @@ Requires: %{name}-dane%{?_isa} = %{version}-%{release}
 %package dane
 Summary: A DANE protocol implementation for GnuTLS
 Requires: %{name}%{?_isa} = %{version}-%{release}
-%endif
-
-%if %{with guile}
-%package guile
-Summary: Guile bindings for the GNUTLS library
-Group: Development/Libraries
-Requires: %{name}%{?_isa} = %{version}-%{release}
-Requires: guile
 %endif
 
 %description
@@ -119,7 +117,6 @@ protocols and technologies around them. It provides a simple C language
 application programming interface (API) to access the secure communications
 protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and
 other required structures.
-This package contains the C++ interface for the GnuTLS library.
 
 %description devel
 GnuTLS is a secure communications library implementing the SSL, TLS and DTLS
@@ -150,178 +147,206 @@ This package contains library that implements the DANE protocol for verifying
 TLS certificates through DNSSEC.
 %endif
 
-%if %{with guile}
-%description guile
-GnuTLS is a secure communications library implementing the SSL, TLS and DTLS
-protocols and technologies around them. It provides a simple C language
-application programming interface (API) to access the secure communications
-protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and
-other required structures.
-This package contains Guile bindings for the library.
-%endif
 
 %prep
-%autosetup -p1
-
-sed 's/gnutls_srp.c//g' -i lib/Makefile.in
-sed 's/gnutls_srp.lo//g' -i lib/Makefile.in
-rm -f lib/minitasn1/*.c lib/minitasn1/*.h
-rm -f src/libopts/*.c src/libopts/*.h src/libopts/compat/*.c src/libopts/compat/*.h
-
-# Touch man pages to avoid them to be regenerated after patches which change
-# .def files
-touch doc/manpages/gnutls-serv.1
-touch doc/manpages/gnutls-cli.1
-
-# Fix permissions for files brought by patches
-chmod ugo+x %{_builddir}/%{name}-%{version}/tests/testpkcs11.sh
-chmod ugo+x %{_builddir}/%{name}-%{version}/tests/sni-hostname.sh
-
-%{SOURCE2} -e
-autoreconf -if
+%autosetup -p1 -S git
 
 %build
-export LDFLAGS="-Wl,--no-add-needed"
 
-%configure --with-libtasn1-prefix=%{_prefix} \
-	   --with-default-trust-store-pkcs11="pkcs11:model=p11-kit-trust;manufacturer=PKCS%2311%20Kit" \
-           --with-included-libcfg \
-	   --with-arcfour128 \
-	   --with-ssl3 \
+%if %{with devtoolset}
+source /opt/rh/devtoolset-11/enable
+%endif
+
+%if %{with bootstrap}
+# autoconfg try to call gtkdocsize which is not necessary in this case (and not installed)
+# workaround the issue by exporting GTKDOCIZE=echo
+# https://github.com/spack/spack/issues/23964
+export GTKDOCIZE=echo
+autoreconf -fi
+%endif
+
+sed -i -e 's|sys_lib_dlsearch_path_spec="/lib /usr/lib|sys_lib_dlsearch_path_spec="/lib /usr/lib %{_libdir}|g' configure
+rm -f lib/minitasn1/*.c lib/minitasn1/*.h
+
+echo "SYSTEM=NORMAL" >> tests/system.prio
+
+CCASFLAGS="$CCASFLAGS -Wa,--generate-missing-build-notes=yes"
+export CCASFLAGS
+
+%if %{with fips}
+eval $(sed -n 's/^\(\(NAME\|VERSION_ID\)=.*\)/OS_\1/p' /etc/os-release)
+export FIPS_MODULE_NAME="$OS_NAME ${OS_VERSION_ID%%.*} %name"
+%endif
+
+mkdir native_build
+pushd native_build
+%global _configure ../configure
+%configure \
+%if %{with fips}
+           --enable-fips140-mode \
+           --with-fips140-module-name="$FIPS_MODULE_NAME" \
+           --with-fips140-module-version=%{version}-%{srpmhash} \
+%endif
+%if %{with gost}
+    	   --enable-gost \
+%else
+	   --disable-gost \
+%endif
+%if %{with srp}
+           --enable-srp-authentication \
+%endif
+	   --enable-sha1-support \
            --disable-static \
            --disable-openssl-compatibility \
-           --disable-srp-authentication \
-	   --disable-non-suiteb-curves \
-	   --with-trousers-lib=%{_libdir}/libtspi.so.1 \
-	   --enable-fips140-mode \
-%if %{with guile}
-           --enable-guile \
-%ifarch %{arm}
-           --disable-largefile \
+           --disable-non-suiteb-curves \
+%if %{with crypto_policies}
+           --with-system-priority-file=%{_sysconfdir}/crypto-policies/back-ends/gnutls.config \
 %endif
+           --with-default-trust-store-pkcs11="pkcs11:" \
+           --without-tpm \
+           --without-tpm2 \
+%if %{with ktls}
+           --enable-ktls \
 %else
-           --disable-guile \
+           --disable-ktls \
 %endif
 %if %{with dane}
-	   --with-unbound-root-key-file=/var/lib/unbound/root.key \
-           --enable-dane \
+           --with-unbound-root-key-file=/var/lib/unbound/root.key \
+           --enable-libdane \
 %else
-           --disable-dane \
+           --disable-libdane \
 %endif
-           --disable-rpath
-# Note that the arm hack above is not quite right and the proper thing would
-# be to compile guile with largefile support.
-make %{?_smp_mflags}
+%if %{with certificate_compression}
+	   --with-zlib --with-brotli --with-zstd \
+%else
+	   --without-zlib --without-brotli --without-zstd \
+%endif
+%if %{with liboqs}
+           --with-liboqs \
+%else
+           --without-liboqs \
+%endif
+           --disable-rpath \
+           --with-default-priority-string="@SYSTEM" \
+           --disable-doc
 
+%make_build
+
+%install
+%make_install -C native_build
+pushd native_build
+
+rm -f $RPM_BUILD_ROOT%{_infodir}/dir
+rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
+
+%if %{without dane}
+rm -f $RPM_BUILD_ROOT%{_libdir}/pkgconfig/gnutls-dane.pc
+%endif
+
+%if %{with fips}
+# doing it twice should be a no-op the second time,
+# and this way we avoid redefining it and missing a future change
+%{__spec_install_post}
+fname=`basename $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.30.*.*`
+./lib/fipshmac "$RPM_BUILD_ROOT%{_libdir}/libgnutls.so.30" > "$RPM_BUILD_ROOT%{_libdir}/.$fname.hmac"
+sed -i "s^$RPM_BUILD_ROOT/usr^^" "$RPM_BUILD_ROOT%{_libdir}/.$fname.hmac"
+ln -s ".$fname.hmac" "$RPM_BUILD_ROOT%{_libdir}/.libgnutls.so.30.hmac"
+%endif
+
+%if %{with fips}
 %define __spec_install_post \
 	%{?__debug_package:%{__debug_install_post}} \
 	%{__arch_install_post} \
 	%{__os_install_post} \
-	fipshmac -d $RPM_BUILD_ROOT%{_libdir} $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.28.*.* \
-	file=`basename $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.28.*.hmac` && mv $RPM_BUILD_ROOT%{_libdir}/$file $RPM_BUILD_ROOT%{_libdir}/.$file && ln -s .$file $RPM_BUILD_ROOT%{_libdir}/.libgnutls.so.28.hmac \
 %{nil}
+%endif
 
-%install
-make install DESTDIR=$RPM_BUILD_ROOT
-rm -f $RPM_BUILD_ROOT%{_bindir}/srptool
-rm -f $RPM_BUILD_ROOT%{_bindir}/gnutls-srpcrypt
-cp -f %{SOURCE1} $RPM_BUILD_ROOT%{_bindir}/libgnutls-config
-rm -f $RPM_BUILD_ROOT%{_mandir}/man1/srptool.1
-rm -f $RPM_BUILD_ROOT%{_mandir}/man3/*srp*
-rm -f $RPM_BUILD_ROOT%{_infodir}/dir
-rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
-rm -f $RPM_BUILD_ROOT%{_libdir}/libguile*.a
-%if %{without dane}
-rm -f $RPM_BUILD_ROOT%{_libdir}/pkgconfig/gnutls-dane.pc
-rm -f $RPM_BUILD_ROOT%{_libdir}/libgnutls-dane.so*
-rm -f $RPM_BUILD_ROOT%{_bindir}/danetool
+%if %{without crypto_policies}
+# use gnutls configuration file
+install -Dm644 %{SOURCE1} %{buildroot}%{_sysconfdir}/%{name}/config
 %endif
 
 %find_lang gnutls
 
 %check
-make check %{?_smp_mflags}
-
-%post -p /sbin/ldconfig
-
-%postun -p /sbin/ldconfig
-
-%post c++ -p /sbin/ldconfig
-
-%postun c++ -p /sbin/ldconfig
-
-%post devel
-if [ -f %{_infodir}/gnutls.info.gz ]; then
-    /sbin/install-info %{_infodir}/gnutls.info.gz %{_infodir}/dir || :
-fi
-
-%preun devel
-if [ $1 = 0 -a -f %{_infodir}/gnutls.info.gz ]; then
-   /sbin/install-info --delete %{_infodir}/gnutls.info.gz %{_infodir}/dir || :
-fi
-
-%if %{with dane}
-%post dane -p /sbin/ldconfig
-
-%postun dane -p /sbin/ldconfig
+%if %{with tests}
+%if %{with devtoolset}
+source /opt/rh/devtoolset-11/enable
 %endif
 
-%if %{with guile}
-%post guile -p /sbin/ldconfig
+pushd native_build
 
-%postun guile -p /sbin/ldconfig
+# KeyUpdate is not yet supported in the kernel.
+# p11-kit-trust test are likely to fail in chroot env without root permission and certificate
+xfail_tests="ktls_keyupdate.sh p11-kit-trust.sh"
+
+# The ktls.sh test currently only supports kernel 5.11+.  This needs to
+# be checked at run time, as the koji builder might be using a different
+# version of kernel on the host than the one indicated by the
+# kernel-devel package.
+
+case "$(uname -r)" in
+  4.* | 5.[0-9].* | 5.10.* )
+    xfail_tests="$xfail_tests ktls.sh"
+    ;;
+esac
+
+make check %{?_smp_mflags} GNUTLS_SYSTEM_PRIORITY_FILE=/dev/null XFAIL_TESTS="$xfail_tests"
+popd
 %endif
 
-%files -f gnutls.lang
-%defattr(-,root,root,-)
-%{_libdir}/libgnutls.so.28*
-%{_libdir}/.libgnutls.so.28*.hmac
-%doc COPYING COPYING.LESSER README AUTHORS NEWS THANKS
+%files -f native_build/gnutls.lang
+%{_libdir}/libgnutls.so.30*
+%if %{with fips}
+%{_libdir}/.libgnutls.so.30*.hmac
+%endif
+%if %{without crypto_policies}
+%{_sysconfdir}/%{name}/config
+%endif
+%doc README.md AUTHORS NEWS THANKS
+%license LICENSE doc/COPYING doc/COPYING.LESSER
 
 %files c++
 %{_libdir}/libgnutlsxx.so.*
 
 %files devel
-%defattr(-,root,root,-)
-%{_bindir}/libgnutls*-config
 %{_includedir}/*
 %{_libdir}/libgnutls*.so
-%{_libdir}/.libgnutls.so.*.hmac
+
 %{_libdir}/pkgconfig/*.pc
-%{_mandir}/man3/*
-%{_infodir}/gnutls*
-%{_infodir}/pkcs11-vision*
 
 %files utils
-%defattr(-,root,root,-)
 %{_bindir}/certtool
-%{_bindir}/tpmtool
 %{_bindir}/ocsptool
 %{_bindir}/psktool
 %{_bindir}/p11tool
-%{_bindir}/crywrap
+%if %{with srp}
+%{_bindir}/srptool
+%endif
 %if %{with dane}
 %{_bindir}/danetool
 %endif
 %{_bindir}/gnutls*
-%{_mandir}/man1/*
-%doc doc/certtool.cfg
 
 %if %{with dane}
 %files dane
-%defattr(-,root,root,-)
 %{_libdir}/libgnutls-dane.so.*
 %endif
 
-%if %{with guile}
-%files guile
-%defattr(-,root,root,-)
-%{_libdir}/libguile*.so*
-%{_datadir}/guile/site/gnutls
-%{_datadir}/guile/site/gnutls.scm
-%endif
 
 %changelog
-* Mon Oct 21 2024 Deli Zhang <deli.zhang@citrix.com> - 3.3.29-10
+* Tue Nov 11 2025 Lin Liu <lin.liu01@citrix.com> - 3.8.8-3
+- CP-310102: Build compatible with XS8
+
+* Tue Jan 21 2025 Alex Brett <alex.brett@cloud.com> - 3.8.8-2
+- CA-405051: Resync with upstream
+
+* Thu Jan 16 2025 Lin Liu <lin.liu@citrix.com> - 3.8.8-1
+- CP-53173: Update to 3.8.8-1, disable bootstrap and enable LTO
+
+* Wed Oct 09 2024 AshwinH <ashwin.h@cloud.com> - 3.8.0-2
+- Removed legacy package softhsm
+
+* Wed Jul 05 2023 Lin Liu <lin.liu@citrix.com> - 3.8.0-1
 - First imported release
 
