@@ -9,7 +9,7 @@
 Summary: A TLS protocol implementation
 Name: gnutls
 Version: 3.3.29
-Release: %{?xsrel}.1%{?dist}
+Release: %{?xsrel}.2%{?dist}
 # The libraries are LGPLv2.1+, utilities are GPLv3+
 License: GPLv3+ and LGPLv2+
 Group: System Environment/Libraries
@@ -33,6 +33,9 @@ BuildRequires: gcc-c++
 %endif
 %if %{with dane}
 BuildRequires: unbound-devel unbound-libs
+%else
+# Remove previous installed version, to avoid "Failed dependencies" on update
+Obsoletes: gnutls-dane < %{version}-%{release}
 %endif
 %if %{with guile}
 BuildRequires: guile-devel
@@ -86,9 +89,6 @@ Requires: %{name}-c++%{?_isa} = %{version}-%{release}
 %endif
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
-%else
-# Remove previous installed version, to avoid "Failed dependencies" on update
-Obsoletes: gnutls-dane < %{version}-%{release}
 %endif
 Requires: pkgconfig
 Requires(post): /sbin/install-info
@@ -101,8 +101,6 @@ Group: Applications/System
 Requires: %{name}%{?_isa} = %{version}-%{release}
 %if %{with dane}
 Requires: %{name}-dane%{?_isa} = %{version}-%{release}
-%else
-Obsoletes: gnutls-dane < %{version}-%{release}
 %endif
 
 %if %{with dane}
@@ -335,6 +333,9 @@ fi
 %endif
 
 %changelog
+* Tue Mar 10 2026 Philippe Coval <philippe.coval@vates.tech> - 3.3.29-10.2
+- Fix obsolete gnutls-dane by using main package to replace it.
+
 * Thu Feb 12 2026 Philippe Coval <philippe.coval@vates.tech> - 3.3.29-10.1
 - Remove installed gnutls-dane if no more supported
 - Remove unnecessary removal of non built files
