@@ -1,8 +1,8 @@
 ## START: Set by rpmautospec
-## (rpmautospec version 0.7.3)
+## (rpmautospec version 0.8.3)
 ## RPMAUTOSPEC: autorelease, autochangelog
 %define autorelease(e:s:pb:n) %{?-p:0.}%{lua:
-    release_number = 4;
+    release_number = 1;
     base_release_number = tonumber(rpm.expand("%{?-b*}%{!?-b:1}"));
     print(release_number + base_release_number - 1);
 }%{?-e:.%{-e*}}%{?-s:.%{-s*}}%{!?-n:%{?dist}}
@@ -22,7 +22,7 @@ sha256sum:close()
 print(string.sub(hash, 0, 16))
 }
 
-Version: 3.8.8
+Version: 3.8.12
 Release: %{?autorelease}%{!?autorelease:1%{?dist}}
 Patch: gnutls-3.2.7-rpath.patch
 
@@ -40,7 +40,8 @@ Patch: gnutls-3.8.8-tests-ktls-skip-tls12-chachapoly.patch
 %bcond_without gost
 %endif
 %bcond_without certificate_compression
-%bcond_without liboqs
+%bcond_without leancrypto
+%bcond_without crypto_auditing
 %bcond_without tests
 
 %if 0%{?fedora} && 0%{?fedora} < 38
@@ -78,13 +79,13 @@ BuildRequires: readline-devel, libtasn1-devel >= 4.3
 %if %{with certificate_compression}
 BuildRequires: zlib-devel, brotli-devel, libzstd-devel
 %endif
-%if %{with liboqs}
-BuildRequires: liboqs-devel
-%endif
 %if %{with bootstrap}
 BuildRequires: automake, autoconf, gperf, libtool, texinfo
 %endif
-BuildRequires: nettle-devel >= 3.10
+BuildRequires: nettle-devel >= 3.10.1
+%if %{with leancrypto}
+BuildRequires: meson
+%endif
 %if %{with tpm12}
 BuildRequires: trousers-devel >= 0.3.11.2
 %endif
@@ -96,6 +97,9 @@ BuildRequires: libunistring-devel
 BuildRequires: net-tools, softhsm, gcc, gcc-c++
 BuildRequires: gnupg2
 BuildRequires: git-core
+%if %{with crypto_auditing}
+BuildRequires: systemtap-sdt-devel
+%endif
 
 # for a sanity check on cert loading
 BuildRequires: p11-kit-trust, ca-certificates
@@ -103,7 +107,7 @@ Requires: crypto-policies
 Requires: p11-kit-trust
 Requires: libtasn1 >= 4.3
 # always bump when a nettle release is packaged
-Requires: nettle >= 3.10
+Requires: nettle >= 3.10.1
 %if %{with tpm12}
 Recommends: trousers >= 0.3.11.2
 %endif
@@ -139,14 +143,16 @@ Source1: https://www.gnupg.org/ftp/gcrypt/gnutls/v%{short_version}/%{name}-%{ver
 Source2: https://gnutls.org/gnutls-release-keyring.gpg
 
 %if %{with bundled_gmp}
+Provides:	bundled(gmp) = 6.2.1
 Source100:	gmp-6.2.1.tar.xz
 # Taken from the main gmp package
 Source101:	gmp-6.2.1-intel-cet.patch
 Source102:	gmp-6.2.1-c23.patch
 %endif
 
-%if 0%{?rhel} >= 10
-Source201:	gnutls-3.8.8-tests-rsa-default.patch
+%if %{with leancrypto}
+Provides:	bundled(leancrypto) = 1.6.0
+Source300:	leancrypto-1.6.0.tar.gz
 %endif
 
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
@@ -281,12 +287,15 @@ patch -p1 < %{SOURCE102}
 popd
 %endif
 
-%if 0%{?rhel} >= 10
-patch -p1 < %{SOURCE201}
-%endif
-
 %build
 %define _lto_cflags %{nil}
+
+%if %{with leancrypto}
+mkdir -p bundled_leancrypto
+pushd bundled_leancrypto
+tar --strip-components=1 -xf %{SOURCE300}
+popd
+%endif
 
 %if %{with bundled_gmp}
 pushd bundled_gmp
@@ -297,6 +306,43 @@ popd
 
 export GMP_CFLAGS="-I$PWD/bundled_gmp"
 export GMP_LIBS="$PWD/bundled_gmp/.libs/libgmp.a"
+%endif
+
+%if %{with leancrypto}
+pushd bundled_leancrypto
+%set_build_flags
+meson setup -Dprefix="$PWD/install" -Dlibdir="$PWD/install/lib" \
+        -Ddefault_library=static \
+        -Dascon=disabled -Dascon_keccak=disabled \
+        -Dbike_5=disabled -Dbike_3=disabled -Dbike_1=disabled \
+        -Dkyber_x25519=disabled -Ddilithium_ed25519=disabled \
+        -Dx509_parser=disabled -Dx509_generator=disabled \
+        -Dpkcs7_parser=disabled -Dpkcs7_generator=disabled \
+        -Dsha2-256=disabled \
+        -Daes_gcm=disabled -Daes_cbc=disabled -Daes_ctr=disabled -Daes_xts=disabled \
+        -Dchacha20=disabled -Dchacha20poly1305=disabled -Dchacha20_drng=disabled \
+        -Ddrbg_hash=disabled -Ddrbg_hmac=disabled \
+        -Dhash_crypt=disabled \
+        -Dhmac=disabled -Dhkdf=disabled \
+        -Dkdf_ctr=disabled -Dkdf_fb=disabled -Dkdf_dpi=disabled \
+        -Dpbkdf2=disabled \
+        -Dkmac_drng=disabled -Dcshake_drng=disabled \
+        -Dhotp=disabled -Dtotp=disabled \
+        -Daes_block=disabled -Daes_cbc=disabled -Daes_ctr=disabled \
+        -Daes_kw=disabled -Dapps=disabled \
+        -Ddisable-asm=true \
+        _build
+# the reason for -Ddisable-asm=true being bz2416812
+# revert once the root cause is fixed
+meson compile -C _build
+meson install -C _build
+
+popd
+
+export LEANCRYPTO_DIR="$PWD/bundled_leancrypto/install"
+
+export LEANCRYPTO_CFLAGS="-I$LEANCRYPTO_DIR/include"
+export LEANCRYPTO_LIBS="$LEANCRYPTO_DIR/lib/libleancrypto.a"
 %endif
 
 %if %{with bootstrap}
@@ -318,6 +364,7 @@ export FIPS_MODULE_NAME="$OS_NAME ${OS_VERSION_ID%%.*} %name"
 
 mkdir native_build
 pushd native_build
+
 %global _configure ../configure
 %configure \
 %if %{with fips}
@@ -365,15 +412,23 @@ pushd native_build
 %else
 	   --without-zlib --without-brotli --without-zstd \
 %endif
-%if %{with liboqs}
-           --with-liboqs \
+%if %{with leancrypto}
+           --with-leancrypto \
 %else
-           --without-liboqs \
+           --without-leancrypto \
+%endif
+%if %{with crypto_auditing}
+           --enable-crypto-auditing \
+%else
+           --disable-crypto-auditing \
 %endif
            --disable-rpath \
            --with-default-priority-string="@SYSTEM"
 
 %make_build
+%if %{with leancrypto}
+sed -i '/^Requires.private:/s/leancrypto[ ,]*//g' lib/gnutls.pc
+%endif
 popd
 
 %if %{with mingw}
@@ -464,22 +519,7 @@ rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/ncrypt.dll*
 %check
 %if %{with tests}
 pushd native_build
-
-# KeyUpdate is not yet supported in the kernel.
-xfail_tests=ktls_keyupdate.sh
-
-# The ktls.sh test currently only supports kernel 5.11+.  This needs to
-# be checked at run time, as the koji builder might be using a different
-# version of kernel on the host than the one indicated by the
-# kernel-devel package.
-
-case "$(uname -r)" in
-  4.* | 5.[0-9].* | 5.10.* )
-    xfail_tests="$xfail_tests ktls.sh"
-    ;;
-esac
-
-make check %{?_smp_mflags} GNUTLS_SYSTEM_PRIORITY_FILE=/dev/null XFAIL_TESTS="$xfail_tests"
+make check %{?_smp_mflags} GNUTLS_SYSTEM_PRIORITY_FILE=/dev/null || { cat tests/test-suite.log tests/cert-tests/test-suite.log tests/slow/test-suite.log src/gl/tests/test-suite.log; exit 1; }
 popd
 %endif
 
@@ -489,7 +529,7 @@ popd
 %{_libdir}/.libgnutls.so.30*.hmac
 %endif
 %doc README.md AUTHORS NEWS THANKS
-%license LICENSE doc/COPYING doc/COPYING.LESSER
+%license COPYING COPYING.LESSERv2
 
 %files c++
 %{_libdir}/libgnutlsxx.so.*
@@ -533,7 +573,7 @@ popd
 
 %if %{with mingw}
 %files -n mingw32-%{name}
-%license LICENSE doc/COPYING doc/COPYING.LESSER
+%license COPYING COPYING.LESSERv2
 %{mingw32_bindir}/certtool.exe
 %{mingw32_bindir}/gnutls-cli-debug.exe
 %{mingw32_bindir}/gnutls-cli.exe
@@ -551,7 +591,7 @@ popd
 %{mingw32_includedir}/gnutls/
 
 %files -n mingw64-%{name}
-%license LICENSE doc/COPYING doc/COPYING.LESSER
+%license COPYING COPYING.LESSERv2
 %{mingw64_bindir}/certtool.exe
 %{mingw64_bindir}/gnutls-cli-debug.exe
 %{mingw64_bindir}/gnutls-cli.exe
@@ -571,6 +611,80 @@ popd
 
 %changelog
 ## START: Generated by rpmautospec
+* Tue Feb 10 2026 Alexander Sosedkin <asosedkin@redhat.com> - 3.8.12-1
+- Update to 3.8.12 upstream release
+- Resolves: rhbz#2438001
+
+* Wed Jan 21 2026 Alexander Sosedkin <asosedkin@redhat.com> - 3.8.11-10
+- Rebuild gnutls
+
+* Fri Jan 16 2026 Fedora Release Engineering <releng@fedoraproject.org> - 3.8.11-9
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_44_Mass_Rebuild
+
+* Tue Nov 25 2025 Yaakov Selkowitz <yselkowi@redhat.com> - 3.8.11-8
+- Restore gmp tarball to sources
+
+* Tue Nov 25 2025 Yaakov Selkowitz <yselkowi@redhat.com> - 3.8.11-7
+- Drop RHEL10-specific patch
+
+* Tue Nov 25 2025 Alexander Sosedkin <asosedkin@redhat.com> - 3.8.11-6
+- Disable native assembly to work around bz2416812
+
+* Fri Nov 21 2025 Daniel P. Berrangé <berrange@redhat.com> - 3.8.11-5
+- Add missing Provides: bundled(..) for gmp & leancrypto
+
+* Fri Nov 21 2025 Daiki Ueno <dueno@redhat.com> - 3.8.11-4
+- Remove unnecessary PKG_CONFIG_PATH setting
+
+* Fri Nov 21 2025 Daiki Ueno <dueno@redhat.com> - 3.8.11-3
+- Enable crypto-auditing probes
+
+* Fri Nov 21 2025 Daiki Ueno <dueno@redhat.com> - 3.8.11-2
+- Minor fixes to spec file and packit configuration
+
+* Thu Nov 20 2025 Daiki Ueno <dueno@redhat.com> - 3.8.11-1
+- Update to 3.8.11 upstream release
+- Resolves: rhbz#2416041
+
+* Tue Aug 26 2025 Krenzelok Frantisek <krenzelok.frantisek@gmail.com> - 3.8.10-5
+- Revert "Enable kTLS by default"
+
+* Mon Aug 25 2025 Krenzelok Frantisek <krenzelok.frantisek@gmail.com> - 3.8.10-4
+- Enable kTLS by default
+
+* Tue Jul 29 2025 Zoltan Fridrich <zfridric@redhat.com> - 3.8.10-3
+- Rebuild
+
+* Wed Jul 23 2025 Fedora Release Engineering <releng@fedoraproject.org> - 3.8.10-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_43_Mass_Rebuild
+
+* Wed Jul 09 2025 Daiki Ueno <dueno@redhat.com> - 3.8.10-1
+- Update to 3.8.10 upstream release
+
+* Sun Jul 06 2025 Yaakov Selkowitz <yselkowi@redhat.com> - 3.8.9-8
+- Fix build on kernel 6.14+
+
+* Wed Apr 02 2025 Daiki Ueno <dueno@redhat.com> - 3.8.9-7
+- Update leancrypto to 1.3.0
+
+* Sun Mar 30 2025 Peter Robinson <pbrobinson@gmail.com> - 3.8.9-6
+- Bump for gmp build
+
+* Mon Mar 03 2025 Zoltan Fridrich <zfridric@redhat.com> - 3.8.9-5
+- Rebuild GnuTLS
+
+* Mon Feb 17 2025 Daiki Ueno <dueno@redhat.com> - 3.8.9-4
+- Bump nettle dependency to 3.10.1
+
+* Fri Feb 14 2025 Daiki Ueno <dueno@redhat.com> - 3.8.9-3
+- Rebuild against nettle 3.10.1
+
+* Mon Feb 10 2025 Daiki Ueno <dueno@redhat.com> - 3.8.9-2
+- Switch from liboqs to leancrypto
+
+* Mon Feb 10 2025 Daiki Ueno <dueno@redhat.com> - 3.8.9-1
+- Update to gnutls 3.8.9 release
+
 * Wed Feb 05 2025 Yaakov Selkowitz <yselkowi@redhat.com> - 3.8.8-4
 - Fix ELN build
 
