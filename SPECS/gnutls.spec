@@ -74,6 +74,9 @@ Source1: config
 Patch0: gnutls-3.2.7-rpath.patch
 Patch1: gnutls-3.8.8-tests-ktls-skip-tls12-chachapoly.patch
 
+# XCP-ng patches
+Patch1000: gnutls-3.8.8-tests-p11-kit-trust-auto-skip.patch
+
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
 Provides: bundled(gnulib) = 20130424
 
@@ -233,6 +236,9 @@ pushd native_build
 %make_build
 
 %install
+%if %{with devtoolset}
+source /opt/rh/devtoolset-11/enable
+%endif
 %make_install -C native_build
 pushd native_build
 
@@ -277,8 +283,8 @@ source /opt/rh/devtoolset-11/enable
 pushd native_build
 
 # KeyUpdate is not yet supported in the kernel.
-# p11-kit-trust test are likely to fail in chroot env without root permission and certificate
-xfail_tests="ktls_keyupdate.sh p11-kit-trust.sh"
+# p11-kit-trust test will auto-skip in chroot env where trust store is inaccessible
+xfail_tests="ktls_keyupdate.sh"
 
 # The ktls.sh test currently only supports kernel 5.11+.  This needs to
 # be checked at run time, as the koji builder might be using a different
