@@ -1,19 +1,22 @@
-%global package_speccommit 29274ee556d24bb1ea800cda086d786099c9fe72
-%global usver 3.8.8
-%global xsver 3
+%global package_speccommit 306d4bc480a046dd18bf323a38b0b57e6d662fd3
+%global usver 3.8.12
+%global xsver 1
 %global xsrel %{xsver}%{?xscount}%{?xshash}
 
-Version: 3.8.8
+Version: 3.8.12
 Release: %{?xsrel}.1%{?dist}
 
 %bcond_with bootstrap
 # XCP-ng: Disable c++ lib as not needed
 %bcond_with cxx
 %bcond_with dane
-%bcond_without fips
+%bcond_with fips
+%bcond_with tpm12
+%bcond_with tpm2
 %bcond_without gost
 %bcond_with certificate_compression
-%bcond_with liboqs
+%bcond_with leancrypto
+%bcond_without crypto_auditing
 %bcond_without tests
 %bcond_with srp
 
@@ -29,6 +32,9 @@ Release: %{?xsrel}.1%{?dist}
 %bcond_with devtoolset
 %endif
 
+%bcond_with mingw
+%bcond_with bundled_gmp
+
 Summary: A TLS protocol implementation
 Name: gnutls
 # The libraries are LGPLv2.1+, utilities are GPLv3+
@@ -38,22 +44,31 @@ BuildRequires: readline-devel, libtasn1-devel >= 4.3
 %if %{with certificate_compression}
 BuildRequires: zlib-devel, brotli-devel, libzstd-devel
 %endif
-%if %{with liboqs}
-BuildRequires: liboqs-devel
-%endif
 %if %{with bootstrap}
 BuildRequires: automake, autoconf, gperf, libtool, texinfo
 %endif
-BuildRequires: nettle-devel >= 3.5.1
-
-BuildRequires: libunistring-devel
-BuildRequires: libidn2-devel
 %if %{with devtoolset}
 BuildRequires: devtoolset-11-gcc, devtoolset-11-gcc-c++
 %else
 BuildRequires: gcc, gcc-c++
 %endif
+BuildRequires: nettle-devel >= 3.10
+%if %{with leancrypto}
+BuildRequires: meson
+%endif
+%if %{with tpm12}
+BuildRequires: trousers-devel >= 0.3.11.2
+%endif
+%if %{with tpm2}
+BuildRequires: tpm2-tss-devel >= 3.0.3
+%endif
+BuildRequires: libidn2-devel
+BuildRequires: libunistring-devel
+BuildRequires: gnupg2
 BuildRequires: git-core
+%if %{with crypto_auditing}
+BuildRequires: systemtap-sdt-devel
+%endif
 
 # for a sanity check on cert loading
 BuildRequires: p11-kit-trust, ca-certificates
@@ -62,7 +77,10 @@ Requires: crypto-policies
 %endif
 Requires: p11-kit-trust
 Requires: libtasn1 >= 4.3
-Requires: nettle >= 3.4.1
+Requires: nettle >= 3.10
+%if %{with tpm12}
+Recommends: trousers >= 0.3.11.2
+%endif
 
 %if %{with dane}
 BuildRequires: unbound-devel unbound-libs
@@ -72,15 +90,48 @@ Obsoletes: gnutls-dane < %{version}-%{release}
 %endif
 BuildRequires: make
 
+%if %{with mingw}
+BuildRequires:  mingw32-cpp
+BuildRequires:  mingw32-filesystem >= 95
+BuildRequires:  mingw32-gcc
+BuildRequires:  mingw32-gcc-c++
+BuildRequires:  mingw32-libtasn1 >= 4.3
+BuildRequires:  mingw32-readline
+BuildRequires:  mingw32-zlib
+BuildRequires:  mingw32-nettle >= 3.6
+BuildRequires:  mingw64-cpp
+BuildRequires:  mingw64-filesystem >= 95
+BuildRequires:  mingw64-gcc
+BuildRequires:  mingw64-gcc-c++
+BuildRequires:  mingw64-libtasn1 >= 4.3
+BuildRequires:  mingw64-readline
+BuildRequires:  mingw64-zlib
+BuildRequires:  mingw64-nettle >= 3.6
+%endif
+
 URL: http://www.gnutls.org/
 %define short_version %(echo %{version} | grep -m1 -o "[0-9]*\.[0-9]*" | head -1)
-Source0: gnutls-3.8.8.tar.xz
+Source0: gnutls-3.8.12.tar.xz
 Source1: config
 Patch0: gnutls-3.2.7-rpath.patch
 Patch1: gnutls-3.8.8-tests-ktls-skip-tls12-chachapoly.patch
 
 # XCP-ng patches
 Patch1000: gnutls-3.8.8-tests-p11-kit-trust-auto-skip.patch
+
+%if %{with bundled_gmp}
+Provides:	bundled(gmp) = 6.2.1
+Source100:	gmp-6.2.1.tar.xz
+# Taken from the main gmp package
+Source101:	gmp-6.2.1-intel-cet.patch
+Source102:	gmp-6.2.1-c23.patch
+%endif
+
+%if %{with leancrypto}
+Provides:	bundled(leancrypto) = 1.6.0
+Source300: https://repo.citrite.net/xs-local-contrib/gnutls/leancrypto-1.6.0.tar.gz
+## Source300:	leancrypto-1.6.0.tar.gz
+%endif
 
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
 Provides: bundled(gnulib) = 20130424
@@ -114,6 +165,16 @@ Requires: %{name}-dane%{?_isa} = %{version}-%{release}
 %package dane
 Summary: A DANE protocol implementation for GnuTLS
 Requires: %{name}%{?_isa} = %{version}-%{release}
+%endif
+
+%if %{with fips}
+%package fips
+Summary: Virtual package to install packages required to use %{name} under FIPS mode
+Requires: %{name}%{?_isa} = %{version}-%{release}
+%{fips_requires nettle}
+%if !%{with bundled_gmp}
+%{fips_requires gmp}
+%endif
 %endif
 
 %description
@@ -162,14 +223,111 @@ This package contains library that implements the DANE protocol for verifying
 TLS certificates through DNSSEC.
 %endif
 
+%if %{with fips}
+%description fips
+GnuTLS is a secure communications library implementing the SSL, TLS and DTLS
+protocols and technologies around them. It provides a simple C language
+application programming interface (API) to access the secure communications
+protocols as well as APIs to parse and write X.509, PKCS #12, OpenPGP and
+other required structures.
+This package does not contain any file, but installs required packages
+to use GnuTLS under FIPS mode.
+%endif
+
+%if %{with mingw}
+%package -n mingw32-%{name}
+Summary:        MinGW GnuTLS TLS/SSL encryption library
+Requires:       pkgconfig
+Requires:       mingw32-libtasn1 >= 4.3
+BuildArch:      noarch
+
+%description -n mingw32-gnutls
+GnuTLS TLS/SSL encryption library.  This library is cross-compiled
+for MinGW.
+
+%package -n mingw64-%{name}
+Summary:        MinGW GnuTLS TLS/SSL encryption library
+Requires:       pkgconfig
+Requires:       mingw64-libtasn1 >= 4.3
+BuildArch:      noarch
+
+%description -n mingw64-gnutls
+GnuTLS TLS/SSL encryption library.  This library is cross-compiled
+for MinGW.
+
+%{?mingw_debug_package}
+%endif
 
 %prep
 %autosetup -p1 -S git
 
-%build
+%if %{with bundled_gmp}
+mkdir -p bundled_gmp
+pushd bundled_gmp
+tar --strip-components=1 -xf %{SOURCE100}
+patch -p1 < %{SOURCE101}
+patch -p1 < %{SOURCE102}
+popd
+%endif
 
+%build
 %if %{with devtoolset}
 source /opt/rh/devtoolset-11/enable
+%endif
+
+%if %{with leancrypto}
+mkdir -p bundled_leancrypto
+pushd bundled_leancrypto
+tar --strip-components=1 -xf %{SOURCE300}
+popd
+%endif
+
+%if %{with bundled_gmp}
+pushd bundled_gmp
+autoreconf -ifv
+%configure --disable-cxx --disable-shared --enable-fat --with-pic
+%make_build
+popd
+
+export GMP_CFLAGS="-I$PWD/bundled_gmp"
+export GMP_LIBS="$PWD/bundled_gmp/.libs/libgmp.a"
+%endif
+
+%if %{with leancrypto}
+pushd bundled_leancrypto
+%set_build_flags
+meson setup -Dprefix="$PWD/install" -Dlibdir="$PWD/install/lib" \
+        -Ddefault_library=static \
+        -Dascon=disabled -Dascon_keccak=disabled \
+        -Dbike_5=disabled -Dbike_3=disabled -Dbike_1=disabled \
+        -Dkyber_x25519=disabled -Ddilithium_ed25519=disabled \
+        -Dx509_parser=disabled -Dx509_generator=disabled \
+        -Dpkcs7_parser=disabled -Dpkcs7_generator=disabled \
+        -Dsha2-256=disabled \
+        -Daes_gcm=disabled -Daes_cbc=disabled -Daes_ctr=disabled -Daes_xts=disabled \
+        -Dchacha20=disabled -Dchacha20poly1305=disabled -Dchacha20_drng=disabled \
+        -Ddrbg_hash=disabled -Ddrbg_hmac=disabled \
+        -Dhash_crypt=disabled \
+        -Dhmac=disabled -Dhkdf=disabled \
+        -Dkdf_ctr=disabled -Dkdf_fb=disabled -Dkdf_dpi=disabled \
+        -Dpbkdf2=disabled \
+        -Dkmac_drng=disabled -Dcshake_drng=disabled \
+        -Dhotp=disabled -Dtotp=disabled \
+        -Daes_block=disabled -Daes_cbc=disabled -Daes_ctr=disabled \
+        -Daes_kw=disabled -Dapps=disabled \
+        -Ddisable-asm=true \
+        _build
+# the reason for -Ddisable-asm=true being bz2416812
+# revert once the root cause is fixed
+meson compile -C _build
+meson install -C _build
+
+popd
+
+export LEANCRYPTO_DIR="$PWD/bundled_leancrypto/install"
+
+export LEANCRYPTO_CFLAGS="-I$LEANCRYPTO_DIR/include"
+export LEANCRYPTO_LIBS="$LEANCRYPTO_DIR/lib/libleancrypto.a"
 %endif
 
 %if %{with bootstrap}
@@ -195,6 +353,7 @@ export FIPS_MODULE_NAME="$OS_NAME ${OS_VERSION_ID%%.*} %name"
 
 mkdir native_build
 pushd native_build
+
 %global _configure ../configure
 %configure \
 %if %{with fips}
@@ -210,6 +369,9 @@ pushd native_build
 %if %{with srp}
            --enable-srp-authentication \
 %endif
+%ifarch %{ix86}
+           --disable-year2038 \
+%endif
 	   --enable-sha1-support \
            --disable-static \
            --disable-openssl-compatibility \
@@ -218,8 +380,16 @@ pushd native_build
            --with-system-priority-file=%{_sysconfdir}/crypto-policies/back-ends/gnutls.config \
 %endif
            --with-default-trust-store-pkcs11="pkcs11:" \
+%if %{with tpm12}
+           --with-trousers-lib=%{_libdir}/libtspi.so.1 \
+%else
            --without-tpm \
+%endif
+%if %{with tpm2}
+           --with-tpm2 \
+%else
            --without-tpm2 \
+%endif
 %if %{with ktls}
            --enable-ktls \
 %else
@@ -236,10 +406,15 @@ pushd native_build
 %else
 	   --without-zlib --without-brotli --without-zstd \
 %endif
-%if %{with liboqs}
-           --with-liboqs \
+%if %{with leancrypto}
+           --with-leancrypto \
 %else
-           --without-liboqs \
+           --without-leancrypto \
+%endif
+%if %{with crypto_auditing}
+           --enable-crypto-auditing \
+%else
+           --disable-crypto-auditing \
 %endif
            --disable-rpath \
            --with-default-priority-string="@SYSTEM" \
@@ -251,6 +426,34 @@ pushd native_build
 %endif
 
 %make_build
+%if %{with leancrypto}
+sed -i '/^Requires.private:/s/leancrypto[ ,]*//g' lib/gnutls.pc
+%endif
+popd
+
+%if %{with mingw}
+# MinGW does not support CCASFLAGS
+export CCASFLAGS=""
+%mingw_configure \
+%if %{with srp}
+    --enable-srp-authentication \
+%endif
+    --enable-sha1-support \
+    --disable-static \
+    --disable-openssl-compatibility \
+    --disable-non-suiteb-curves \
+    --disable-libdane \
+    --disable-rpath \
+    --disable-nls \
+    --disable-cxx \
+    --enable-shared \
+    --without-tpm \
+    --with-included-unistring \
+    --disable-doc \
+    --with-default-priority-string="@SYSTEM" \
+    --without-p11-kit
+%mingw_make %{?_smp_mflags}
+%endif
 
 %install
 %if %{with devtoolset}
@@ -259,10 +462,8 @@ source /opt/rh/devtoolset-11/enable
 %endif
 %make_install -C native_build
 pushd native_build
-
 rm -f $RPM_BUILD_ROOT%{_infodir}/dir
 rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
-
 %if %{without dane}
 rm -f $RPM_BUILD_ROOT%{_libdir}/pkgconfig/gnutls-dane.pc
 %endif
@@ -270,6 +471,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/pkgconfig/gnutls-dane.pc
 %if %{with fips}
 # doing it twice should be a no-op the second time,
 # and this way we avoid redefining it and missing a future change
+%global __debug_package 1
 %{__spec_install_post}
 fname=`basename $RPM_BUILD_ROOT%{_libdir}/libgnutls.so.30.*.*`
 ./lib/fipshmac "$RPM_BUILD_ROOT%{_libdir}/libgnutls.so.30" > "$RPM_BUILD_ROOT%{_libdir}/.$fname.hmac"
@@ -291,6 +493,36 @@ install -Dm644 %{SOURCE1} %{buildroot}%{_sysconfdir}/%{name}/config
 %endif
 
 %find_lang gnutls
+popd
+
+%if %{with mingw}
+%mingw_make_install
+
+# Remove .la files
+rm -f $RPM_BUILD_ROOT%{mingw32_libdir}/*.la
+rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/*.la
+
+# The .def files aren't interesting for other binaries
+rm -f $RPM_BUILD_ROOT%{mingw32_bindir}/*.def
+rm -f $RPM_BUILD_ROOT%{mingw64_bindir}/*.def
+
+# Remove info and man pages which duplicate stuff in Fedora already.
+rm -rf $RPM_BUILD_ROOT%{mingw32_infodir}
+rm -rf $RPM_BUILD_ROOT%{mingw32_mandir}
+rm -rf $RPM_BUILD_ROOT%{mingw32_docdir}/gnutls
+
+rm -rf $RPM_BUILD_ROOT%{mingw64_infodir}
+rm -rf $RPM_BUILD_ROOT%{mingw64_mandir}
+rm -rf $RPM_BUILD_ROOT%{mingw64_docdir}/gnutls
+
+# Remove test libraries
+rm -f $RPM_BUILD_ROOT%{mingw32_libdir}/crypt32.dll*
+rm -f $RPM_BUILD_ROOT%{mingw32_libdir}/ncrypt.dll*
+rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/crypt32.dll*
+rm -f $RPM_BUILD_ROOT%{mingw64_libdir}/ncrypt.dll*
+
+%mingw_debug_install_post
+%endif
 
 %check
 %if %{with tests}
@@ -315,7 +547,7 @@ case "$(uname -r)" in
     ;;
 esac
 
-make check %{?_smp_mflags} GNUTLS_SYSTEM_PRIORITY_FILE=/dev/null XFAIL_TESTS="$xfail_tests"
+make check %{?_smp_mflags} GNUTLS_SYSTEM_PRIORITY_FILE=/dev/null XFAIL_TESTS="$xfail_tests" || { cat tests/test-suite.log tests/cert-tests/test-suite.log tests/slow/test-suite.log src/gl/tests/test-suite.log; exit 1; }
 popd
 %endif
 
@@ -328,7 +560,7 @@ popd
 %{_sysconfdir}/%{name}/config
 %endif
 %doc README.md AUTHORS NEWS THANKS
-%license LICENSE doc/COPYING doc/COPYING.LESSER
+%license COPYING COPYING.LESSERv2
 
 %if %{with cxx}
 %files c++
@@ -343,6 +575,9 @@ popd
 
 %files utils
 %{_bindir}/certtool
+%if %{with tpm12}
+%{_bindir}/tpmtool
+%endif
 %{_bindir}/ocsptool
 %{_bindir}/psktool
 %{_bindir}/p11tool
@@ -353,14 +588,62 @@ popd
 %{_bindir}/danetool
 %endif
 %{_bindir}/gnutls*
+%doc doc/certtool.cfg
 
 %if %{with dane}
 %files dane
 %{_libdir}/libgnutls-dane.so.*
 %endif
 
+%if %{with fips}
+%files fips
+%endif
+
+%if %{with mingw}
+%files -n mingw32-%{name}
+%license COPYING COPYING.LESSERv2
+%{mingw32_bindir}/certtool.exe
+%{mingw32_bindir}/gnutls-cli-debug.exe
+%{mingw32_bindir}/gnutls-cli.exe
+%{mingw32_bindir}/gnutls-serv.exe
+%{mingw32_bindir}/libgnutls-30.dll
+%{mingw32_bindir}/ocsptool.exe
+#%%{mingw32_bindir}/p11tool.exe
+%{mingw32_bindir}/psktool.exe
+%if %{with srp}
+%{mingw32_bindir}/srptool.exe
+%endif
+%{mingw32_libdir}/libgnutls.dll.a
+%{mingw32_libdir}/libgnutls-30.def
+%{mingw32_libdir}/pkgconfig/gnutls.pc
+%{mingw32_includedir}/gnutls/
+
+%files -n mingw64-%{name}
+%license COPYING COPYING.LESSERv2
+%{mingw64_bindir}/certtool.exe
+%{mingw64_bindir}/gnutls-cli-debug.exe
+%{mingw64_bindir}/gnutls-cli.exe
+%{mingw64_bindir}/gnutls-serv.exe
+%{mingw64_bindir}/libgnutls-30.dll
+%{mingw64_bindir}/ocsptool.exe
+#%%{mingw64_bindir}/p11tool.exe
+%{mingw64_bindir}/psktool.exe
+%if %{with srp}
+%{mingw64_bindir}/srptool.exe
+%endif
+%{mingw64_libdir}/libgnutls.dll.a
+%{mingw64_libdir}/libgnutls-30.def
+%{mingw64_libdir}/pkgconfig/gnutls.pc
+%{mingw64_includedir}/gnutls/
+%endif
 
 %changelog
+* Thu Jul 16 2026 Philippe Coval <philippe.coval@vates.tech> - 3.8.12-1.1
+- Rebase on 3.8.12-1
+- *** Upstream changelog ***
+  * Fri Feb 20 2026 Alex Brett <alex.brett@citrix.com> - 3.8.12-1
+  - CP-311687: Update to gnutls 3.8.12
+
 * Wed Jul 15 2026 Philippe Coval <philippe.coval@vates.tech> - 3.8.8-3.1
 - Keep c++ disabled (and explicity disable in autoconf call)
 - Add patch to auto-skip p11-kit-trust.sh when trust store is inaccessible
