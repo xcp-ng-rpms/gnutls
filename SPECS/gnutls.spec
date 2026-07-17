@@ -4,7 +4,7 @@
 %global xsrel %{xsver}%{?xscount}%{?xshash}
 
 Version: 3.8.12
-Release: %{?xsrel}.1%{?dist}
+Release: %{?xsrel}.1~XCPNG3222.1%{?dist}
 
 %bcond_with bootstrap
 # XCP-ng: Disable c++ lib as not needed
