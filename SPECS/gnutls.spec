@@ -4,7 +4,7 @@
 %global xsrel %{xsver}%{?xscount}%{?xshash}
 
 Version: 3.8.12
-Release: %{?xsrel}%{?dist}
+Release: %{?xsrel}.1%{?dist}
 
 %bcond_with bootstrap
 # XCP-ng: Disable c++ lib as not needed
@@ -118,6 +118,8 @@ Patch1: gnutls-3.8.8-tests-ktls-skip-tls12-chachapoly.patch
 
 # XCP-ng patches
 Patch1000: gnutls-3.8.8-tests-p11-kit-trust-auto-skip.patch
+# Origin: https://gitlab.com/gnutls/gnutls/-/commit/19f6508647bdcd3ce21130201e484d7ca6d962c5
+Patch1001: gnutls-3.8.12-167-g19f650864-CVE-2026-3833.patch
 
 %if %{with bundled_gmp}
 Provides:	bundled(gmp) = 6.2.1
@@ -638,11 +640,12 @@ popd
 %endif
 
 %changelog
-# * Mon Nov 02 2026 Philippe Coval <philippe.coval@vates.tech> - 3.8.12-1.1
-# - Rebase on 3.8.12-1
-# - *** Upstream changelog ***
-#   * Fri Feb 20 2026 Alex Brett <alex.brett@citrix.com> - 3.8.12-1
-#   - CP-311687: Update to gnutls 3.8.12
+* Mon Nov 02 2026 Philippe Coval <philippe.coval@vates.tech> - 3.8.12-1.1
+- Fix CVE-2026-3833 with upstream patch
+- Rebase on 3.8.12-1
+- *** Upstream changelog ***
+  * Fri Feb 20 2026 Alex Brett <alex.brett@citrix.com> - 3.8.12-1
+  - CP-311687: Update to gnutls 3.8.12
 
 * Wed Jul 15 2026 Philippe Coval <philippe.coval@vates.tech> - 3.8.8-3.1
 - Keep c++ disabled (and explicity disable in autoconf call)
