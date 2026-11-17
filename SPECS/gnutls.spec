@@ -122,17 +122,17 @@ Patch1000: gnutls-3.8.8-tests-p11-kit-trust-auto-skip.patch
 Patch1001: gnutls-3.8.12-167-g19f650864-CVE-2026-3833.patch
 
 %if %{with bundled_gmp}
-Provides:	bundled(gmp) = 6.2.1
-Source100:	gmp-6.2.1.tar.xz
+Provides:       bundled(gmp) = 6.2.1
+Source100:      gmp-6.2.1.tar.xz
 # Taken from the main gmp package
-Source101:	gmp-6.2.1-intel-cet.patch
-Source102:	gmp-6.2.1-c23.patch
+Source101:      gmp-6.2.1-intel-cet.patch
+Source102:      gmp-6.2.1-c23.patch
 %endif
 
 %if %{with leancrypto}
-Provides:	bundled(leancrypto) = 1.6.0
+Provides:       bundled(leancrypto) = 1.6.0
 Source300: https://repo.citrite.net/xs-local-contrib/gnutls/leancrypto-1.6.0.tar.gz
-## Source300:	leancrypto-1.6.0.tar.gz
+## Source300:   leancrypto-1.6.0.tar.gz
 %endif
 
 # Wildcard bundling exception https://fedorahosted.org/fpc/ticket/174
@@ -364,9 +364,9 @@ pushd native_build
            --with-fips140-module-version=%{version}-%{srpmhash} \
 %endif
 %if %{with gost}
-    	   --enable-gost \
+           --enable-gost \
 %else
-	   --disable-gost \
+           --disable-gost \
 %endif
 %if %{with srp}
            --enable-srp-authentication \
@@ -374,7 +374,7 @@ pushd native_build
 %ifarch %{ix86}
            --disable-year2038 \
 %endif
-	   --enable-sha1-support \
+           --enable-sha1-support \
            --disable-static \
            --disable-openssl-compatibility \
            --disable-non-suiteb-curves \
@@ -404,9 +404,9 @@ pushd native_build
            --disable-libdane \
 %endif
 %if %{with certificate_compression}
-	   --with-zlib --with-brotli --with-zstd \
+           --with-zlib --with-brotli --with-zstd \
 %else
-	   --without-zlib --without-brotli --without-zstd \
+           --without-zlib --without-brotli --without-zstd \
 %endif
 %if %{with leancrypto}
            --with-leancrypto \
@@ -483,9 +483,9 @@ ln -s ".$fname.hmac" "$RPM_BUILD_ROOT%{_libdir}/.libgnutls.so.30.hmac"
 
 %if %{with fips}
 %define __spec_install_post \
-	%{?__debug_package:%{__debug_install_post}} \
-	%{__arch_install_post} \
-	%{__os_install_post} \
+        %{?__debug_package:%{__debug_install_post}} \
+        %{__arch_install_post} \
+        %{__os_install_post} \
 %{nil}
 %endif
 
